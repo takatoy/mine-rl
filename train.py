@@ -13,6 +13,9 @@ from utility.parser import Parser
 import coloredlogs
 coloredlogs.install(logging.DEBUG)
 
+from src.agent import Agent
+from src.env_wrappers import CombineActionWrapper, SerialDiscreteCombineActionWrapper, FrameSkip, MoveAxisWrapper, ObtainPoVWrapper
+
 # All the evaluations will be evaluated on MineRLObtainDiamond-v0 environment
 MINERL_GYM_ENV = os.getenv('MINERL_GYM_ENV', 'MineRLObtainDiamond-v0')
 # You need to ensure that your submission is trained in under MINERL_TRAINING_MAX_STEPS steps
@@ -38,25 +41,32 @@ parser = Parser('performance/',
                 initial_poll_timeout=600)
 
 def main():
-    """
-    This function will be called for training phase.
-    """
-    # How to sample minerl data is document here:
-    # http://minerl.io/docs/tutorials/data_sampling.html
     data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
 
-    # Sample code for illustration, add your training code below
     env = gym.make(MINERL_GYM_ENV)
+    # env = FrameSkip(env, skip=4)
+    env = MoveAxisWrapper(env, -1, 0)
+    env = CombineActionWrapper(env)
+    env = SerialDiscreteCombineActionWrapper(env)
 
-#     actions = [env.action_space.sample() for _ in range(10)] # Just doing 10 samples in this example
-#     xposes = []
-#     for _ in range(1):
-#         obs = env.reset()
-#         done = False
-#         netr = 0
+    agent = Agent(env.observation_space, env.action_space)
 
-#         # Limiting our code to 1024 steps in this example, you can do "while not done" to run till end
-#         while not done:
+    # for s, a, r, ns, done in data.sarsd_iter(num_epochs=1, max_sequence_len=32):
+    #     s['inventory']['coal']
+
+    while True:
+        obs = env.reset()
+        done = False
+        netr = 0
+        nobs = None
+        while not done:
+            action = agent.act(obs)
+            nobs, reward, done, info = env.step(action)
+            netr += reward
+            agent.add_data(obs, action, reward, nobs)
+            obs = nobs
+
+            env.render()
 
             # To get better view in your training phase, it is suggested
             # to register progress continuously, example when 54% completed
@@ -69,8 +79,10 @@ def main():
             # Example: {'state': 'RUNNING', 'score': {'score': 0.0, 'score_secondary': 0.0}, 'instances': {'1': {'totalNumberSteps': 2001, 'totalNumberEpisodes': 0, 'currentEnvironment': 'MineRLObtainDiamond-v0', 'state': 'IN_PROGRESS', 'episodes': [{'numTicks': 2001, 'environment': 'MineRLObtainDiamond-v0', 'rewards': 0.0, 'state': 'IN_PROGRESS'}], 'score': {'score': 0.0, 'score_secondary': 0.0}}}}
             # .current_state: provide indepth state information avaiable as dictionary (key: instance id)
 
+        agent.train()
+
     # Save trained model to train/ directory
-    # Training 100% Completed
+
     aicrowd_helper.register_progress(1)
     env.close()
 
