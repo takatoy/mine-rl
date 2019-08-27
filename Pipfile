@@ -1,0 +1,19 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+crowdai-api = "*"
+minerl = "==0.2.3"
+coloredlogs = "*"
+matplotlib = "*"
+opencv-python = "*"
+torch = "*"
+Pyro4 = "*"
+numpy = "*"
+
+[requires]
+python_version = "3.6"
