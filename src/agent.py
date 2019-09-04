@@ -192,10 +192,13 @@ class Agent:
 
     def preprocess(self, obs):
         pov = obs['pov'].astype(np.float) / 255
-        item = np.concatenate([
-            flatten(self.observation_space['equipped_items'], obs['equipped_items']),
-            flatten(self.observation_space['inventory'], obs['inventory'])
-        ])
+        try:
+            item = np.concatenate([
+                flatten(self.observation_space['equipped_items'], obs['equipped_items']),
+                flatten(self.observation_space['inventory'], obs['inventory'])
+            ])
+        except:
+            print(obs)
         return pov, item
 
     def add_data(self, obs, action, reward, n_obs, done):
@@ -207,6 +210,8 @@ class Agent:
         self.memory.push(datum)
 
     def train_discriminator(self, expert_states, expert_actions):
+        self.discriminator.train()
+
         n = len(expert_states)
 
         exp_povs = []
@@ -306,3 +311,20 @@ class Agent:
         lp = torch.tensor(samples[7], dtype=torch.float, device=device)
 
         return pov, item, action, reward, n_pov, n_item, done_mask, lp
+
+    def save_model(self, path='train/checkpoint.pth'):
+        torch.save({
+            'policy_state_dict': self.policy.state_dict(),
+            'policy_optim_state_dict': self.policy_optim.state_dict(),
+            'discriminator_state_dict': self.discriminator.state_dict(),
+            'discriminator_optim_state_dict': self.discriminator_optim.state_dict()
+        }, path)
+
+    def load_model(self, path='train/checkpoint.pth'):
+        checkpoint = torch.load(path)
+        self.policy.load_state_dict(checkpoint['policy_state_dict'])
+        self.policy_optim.load_state_dict(checkpoint['policy_optim_state_dict'])
+        self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+        self.discriminator_optim.load_state_dict(checkpoint['discriminator_optim_state_dict'])
+        self.policy.to(device)
+        self.discriminator.to(device)

@@ -93,11 +93,12 @@ def main():
             step += 1
 
             if step % 128 == 0:
-                for i in range(20):
+                for i in range(3):
                     s, a, _, _, _ = data_provider.__next__()
                     s, a = data_wrapper(s, a)
                     agent.train_discriminator(s, a)
                 agent.train()
+                agent.save_model()
 
             net_steps += 1
             if net_steps >= MINERL_TRAINING_MAX_STEPS:
