@@ -29,15 +29,15 @@ class FrameSkip(gym.Wrapper):
         return obs, total_reward, done, info
 
 
-class ObtainPoVWrapper(gym.ObservationWrapper):
+class ObsWrapper(gym.ObservationWrapper):
     """Obtain 'pov' value (current game display) of the original observation."""
     def __init__(self, env):
         super().__init__(env)
 
-        self.observation_space = self.env.observation_space.spaces['pov']
-
     def observation(self, observation):
-        return observation['pov']
+        if type(observation['equipped_items']['mainhand']['type']) is str:
+            observation['equipped_items']['mainhand']['type'] = 8
+        return observation
 
 
 class MoveAxisWrapper(gym.ObservationWrapper):

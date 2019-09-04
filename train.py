@@ -15,7 +15,7 @@ coloredlogs.install(logging.DEBUG)
 
 from collections import OrderedDict
 from src.agent import Agent
-from src.env_wrappers import CombineActionWrapper, SerialDiscreteCombineActionWrapper, FrameSkip, MoveAxisWrapper, ObtainPoVWrapper, data_wrapper
+from src.env_wrappers import CombineActionWrapper, SerialDiscreteCombineActionWrapper, FrameSkip, MoveAxisWrapper, ObsWrapper, data_wrapper
 
 # All the evaluations will be evaluated on MineRLObtainDiamond-v0 environment
 MINERL_GYM_ENV = os.getenv('MINERL_GYM_ENV', 'MineRLObtainDiamond-v0')
@@ -48,6 +48,7 @@ def main():
 
     env = gym.make('MineRLObtainDiamondDense-v0')
     # env = FrameSkip(env, skip=4)
+    env = ObsWrapper(env)
     env = MoveAxisWrapper(env, -1, 0)
     env = CombineActionWrapper(env)
     env = SerialDiscreteCombineActionWrapper(env)
