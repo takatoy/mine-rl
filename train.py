@@ -13,8 +13,9 @@ from utility.parser import Parser
 import coloredlogs
 coloredlogs.install(logging.DEBUG)
 
+from collections import OrderedDict
 from src.agent import Agent
-from src.env_wrappers import CombineActionWrapper, SerialDiscreteCombineActionWrapper, FrameSkip, MoveAxisWrapper, ObtainPoVWrapper
+from src.env_wrappers import CombineActionWrapper, SerialDiscreteCombineActionWrapper, FrameSkip, MoveAxisWrapper, ObtainPoVWrapper, data_wrapper
 
 # All the evaluations will be evaluated on MineRLObtainDiamond-v0 environment
 MINERL_GYM_ENV = os.getenv('MINERL_GYM_ENV', 'MineRLObtainDiamond-v0')
@@ -51,19 +52,23 @@ def main():
 
     agent = Agent(env.observation_space, env.action_space)
 
-    # for s, a, r, ns, done in data.sarsd_iter(num_epochs=1, max_sequence_len=32):
-    #     s['inventory']['coal']
+    for s, a, _, _, _ in data.sarsd_iter(num_epochs=10, max_sequence_len=128):
+        s, a = data_wrapper(s, a)
+        agent.train_from_expert(s, a)
+
+    net_steps = 0
 
     while True:
         obs = env.reset()
         done = False
         netr = 0
         nobs = None
+        step = 0
         while not done:
             action = agent.act(obs)
             nobs, reward, done, info = env.step(action)
             netr += reward
-            agent.add_data(obs, action, reward, nobs)
+            agent.add_data(obs, action, reward, nobs, done)
             obs = nobs
 
             env.render()
@@ -79,7 +84,19 @@ def main():
             # Example: {'state': 'RUNNING', 'score': {'score': 0.0, 'score_secondary': 0.0}, 'instances': {'1': {'totalNumberSteps': 2001, 'totalNumberEpisodes': 0, 'currentEnvironment': 'MineRLObtainDiamond-v0', 'state': 'IN_PROGRESS', 'episodes': [{'numTicks': 2001, 'environment': 'MineRLObtainDiamond-v0', 'rewards': 0.0, 'state': 'IN_PROGRESS'}], 'score': {'score': 0.0, 'score_secondary': 0.0}}}}
             # .current_state: provide indepth state information avaiable as dictionary (key: instance id)
 
+            step += 1
+
+            if step % 128 == 0:
+                agent.train()
+
+            net_steps += 1
+            if net_steps >= MINERL_TRAINING_MAX_STEPS:
+                break
+
         agent.train()
+
+        if net_steps >= MINERL_TRAINING_MAX_STEPS:
+            break
 
     # Save trained model to train/ directory
 

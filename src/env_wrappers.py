@@ -1,6 +1,7 @@
 from collections import OrderedDict
 import copy
 import time
+import random
 
 import gym
 import numpy as np
@@ -157,13 +158,19 @@ class SerialDiscreteCombineActionWrapper(gym.ActionWrapper):
         self._actions = [self.noop]
         for key in self.noop:
             if key == 'camera':
-                # action candidate : {[0, -10], [0, 10]}
                 op = copy.deepcopy(self.noop)
                 op[key] = np.array([0, -10], dtype=np.float32)
                 self._actions.append(op)
                 op = copy.deepcopy(self.noop)
                 op[key] = np.array([0, 10], dtype=np.float32)
                 self._actions.append(op)
+                op = copy.deepcopy(self.noop)
+                op[key] = np.array([-10, 0], dtype=np.float32)
+                self._actions.append(op)
+                op = copy.deepcopy(self.noop)
+                op[key] = np.array([10, 0], dtype=np.float32)
+                self._actions.append(op)
+                op = copy.deepcopy(self.noop)
             else:
                 for a in range(1, self.wrapping_action_space.spaces[key].n):
                     op = copy.deepcopy(self.noop)
@@ -179,3 +186,70 @@ class SerialDiscreteCombineActionWrapper(gym.ActionWrapper):
 
         original_space_action = self._actions[action]
         return original_space_action
+
+
+def action_wrapper(action):
+    # discrete actions
+    mapping = {
+        'forward': 1,
+        'back': 2,
+        'left': 3,
+        'right': 4,
+        'jump': 5,
+        'sneak': 6,
+        'sprint': 7,
+        'camera': [8, 9, 10, 11],
+        'attack': 12,
+        'place': [13, 14, 15, 16, 17, 18],
+        'equip': [19, 20, 21, 22, 23, 24, 25],
+        'craft': [26, 27, 28, 29],
+        'nearbyCraft': [30, 31, 32, 33, 34, 35, 36],
+        'nearbySmelt': [37, 38]
+    }
+    candidate = []
+    for k, v in action.items():
+        if k in ['forward', 'back', 'left', 'right', 'jump', 'sneak', 'sprint', 'attack'] and v == 1:
+            candidate.append(mapping[k])
+        elif k in ['place', 'equip', 'craft', 'nearbyCraft', 'nearbySmelt'] and v != 0:
+            candidate.append(mapping[k][v - 1])
+        elif k == 'camera':
+            if v[1] < -3.0:
+                candidate.append(mapping[k][0])
+            if v[1] > 3.0:
+                candidate.append(mapping[k][1])
+            if v[0] < -3.0:
+                candidate.append(mapping[k][2])
+            if v[0] > 3.0:
+                candidate.append(mapping[k][3])
+
+    if len(candidate) == 0:
+        candidate.append(0)
+
+    action = random.choice(candidate)
+    return action
+
+
+def data_wrapper(data_states, data_actions):
+    actions = []
+    for i in range(len(data_actions['attack'])):
+        a = {}
+        for k, v in data_actions.items():
+            a[k] = v[i]
+        actions.append(action_wrapper(a))
+    
+    states = []
+    for i in range(len(data_states['pov'])):
+        s = {
+            'equipped_items': {
+                'mainhand': {}
+            },
+            'inventory': {}
+        }
+        for k, v in data_states['equipped_items']['mainhand'].items():
+            s['equipped_items']['mainhand'][k] = v[i]
+        for k, v in data_states['inventory'].items():
+            s['inventory'][k] = v[i]
+        s['pov'] = np.moveaxis(data_states['pov'][i], -1, 0)
+        states.append(s)
+    
+    return states, actions
