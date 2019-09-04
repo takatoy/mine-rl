@@ -41,10 +41,12 @@ parser = Parser('performance/',
                 submission_timeout=MINERL_TRAINING_TIMEOUT*60,
                 initial_poll_timeout=600)
 
+logf = open('rewards.txt', 'w')
+
 def main():
     data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
 
-    env = gym.make(MINERL_GYM_ENV)
+    env = gym.make('MineRLObtainDiamondDense-v0')
     # env = FrameSkip(env, skip=4)
     env = MoveAxisWrapper(env, -1, 0)
     env = CombineActionWrapper(env)
@@ -100,6 +102,7 @@ def main():
             if net_steps >= MINERL_TRAINING_MAX_STEPS:
                 break
 
+        logf.write('{}\n'.format(netr))
         agent.train()
 
         if net_steps >= MINERL_TRAINING_MAX_STEPS:
@@ -109,6 +112,7 @@ def main():
 
     aicrowd_helper.register_progress(1)
     env.close()
+    logf.close()
 
 
 if __name__ == "__main__":

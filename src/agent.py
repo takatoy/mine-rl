@@ -167,7 +167,7 @@ class Agent:
 
         self.policy = Policy(item_dim, self.action_space.n).to(device)
         self.policy_optim = torch.optim.Adam(self.policy.parameters())
-        self.discriminator = Discriminator(item_dim, self.action_space.n)
+        self.discriminator = Discriminator(item_dim, self.action_space.n).to(device)
         self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters())
 
         self.memory = Memory(capacity=MEMORY_CAPACITY)
