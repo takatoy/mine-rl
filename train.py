@@ -50,14 +50,16 @@ def main():
     env = CombineActionWrapper(env)
     env = SerialDiscreteCombineActionWrapper(env)
 
+    data_provider = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
+
     agent = Agent(env.observation_space, env.action_space)
 
-    for s, a, _, _, _ in data.sarsd_iter(num_epochs=10, max_sequence_len=128):
+    for i in range(256):
+        s, a, _, _, _ = data_provider.__next__()
         s, a = data_wrapper(s, a)
-        agent.train_from_expert(s, a)
+        agent.train_discriminator(s, a)
 
     net_steps = 0
-
     while True:
         obs = env.reset()
         done = False
@@ -68,6 +70,7 @@ def main():
             action = agent.act(obs)
             nobs, reward, done, info = env.step(action)
             netr += reward
+            reward += agent.bonus_reward(obs, action)
             agent.add_data(obs, action, reward, nobs, done)
             obs = nobs
 
@@ -87,6 +90,10 @@ def main():
             step += 1
 
             if step % 128 == 0:
+                for i in range(20):
+                    s, a, _, _, _ = data_provider.__next__()
+                    s, a = data_wrapper(s, a)
+                    agent.train_discriminator(s, a)
                 agent.train()
 
             net_steps += 1

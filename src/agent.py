@@ -153,7 +153,7 @@ class Discriminator(nn.Module):
         x = torch.cat([x, y, a], -1)
         x = F.relu(self.do1(self.fc1(x)))
         x = F.relu(self.do2(self.fc2(x)))
-        x = F.sigmoid(self.fc3(x))
+        x = torch.sigmoid(self.fc3(x))
         return x
 
 
@@ -206,8 +206,9 @@ class Agent:
         datum = [pov, item, action, reward, n_pov, n_item, done, self.last_lp]
         self.memory.push(datum)
 
-    def train_from_expert(self, expert_states, expert_actions):
+    def train_discriminator(self, expert_states, expert_actions):
         n = len(expert_states)
+
         exp_povs = []
         exp_items = []
         povs = []
@@ -245,12 +246,12 @@ class Agent:
         loss.backward()
         self.discriminator_optim.step()
 
-        # policy
-        loss = -self.discriminator(povs, items, actions)
-        print('policy loss: {}'.format(loss.mean()))
-        self.policy_optim.zero_grad()
-        loss.mean().backward()
-        self.policy_optim.step()
+    def bonus_reward(self, state, action):
+        pov, item = self.preprocess(state)
+        pov = torch.tensor([pov], device=device).float()
+        item = torch.tensor([item], device=device).float()
+        action = torch.tensor([flatten(self.action_space, action)], device=device).float()
+        return -torch.log(self.discriminator(pov, item, action)).item()
 
     def train(self):
         self.policy.train()
