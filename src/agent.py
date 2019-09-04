@@ -262,7 +262,7 @@ class Agent:
             s_val = self.policy.val(pov, item)
             td_target = reward.unsqueeze(-1) + GAMMA * self.policy.val(n_pov, n_item) * done_mask
             delta = td_target - s_val
-            delta = delta.detach().numpy()
+            delta = delta.detach()
 
             adv = []
             A = 0.0
