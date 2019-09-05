@@ -238,11 +238,12 @@ class Agent:
         loss = self.bce_loss(probs, exp_labels)
         probs = self.discriminator(povs, items, actions.detach())
         loss += self.bce_loss(probs, labels)
-        print('discriminator loss: {}'.format(loss))
 
         self.discriminator_optim.zero_grad()
         loss.backward()
         self.discriminator_optim.step()
+
+        return loss.item()
 
     def bonus_reward(self, state, action):
         pov, item = self.preprocess(state)
@@ -257,6 +258,7 @@ class Agent:
 
         pov, item, action, reward, n_pov, n_item, done_mask, olp = self.make_batches()
 
+        mean_loss = 0.0
         for _ in range(K_EPOCH):
             s_val = self.policy.val(pov, item)
             td_target = reward.unsqueeze(-1) + GAMMA * self.policy.val(n_pov, n_item) * done_mask
@@ -285,6 +287,10 @@ class Agent:
             self.policy_optim.zero_grad()
             loss.mean().backward()
             self.policy_optim.step()
+
+            mean_loss += loss.mean().item()
+
+        return mean_loss / K_EPOCH
 
     def make_batches(self):
         samples = self.memory.sample(BATCH_SIZE)

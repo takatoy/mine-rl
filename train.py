@@ -16,6 +16,7 @@ coloredlogs.install(logging.DEBUG)
 from collections import OrderedDict
 from src.agent import Agent
 from src.env_wrappers import CombineActionWrapper, SerialDiscreteCombineActionWrapper, FrameSkip, MoveAxisWrapper, ObsWrapper, data_wrapper
+from torch.utils.tensorboard import SummaryWriter
 
 # All the evaluations will be evaluated on MineRLObtainDiamond-v0 environment
 MINERL_GYM_ENV = os.getenv('MINERL_GYM_ENV', 'MineRLObtainDiamond-v0')
@@ -41,9 +42,12 @@ parser = Parser('performance/',
                 submission_timeout=MINERL_TRAINING_TIMEOUT*60,
                 initial_poll_timeout=600)
 
-logf = open('rewards.txt', 'w')
+TRAIN_PER = 128
+TRAIN_DISCRIM_EPOCH = 3
 
 def main():
+    writer = SummaryWriter()
+
     data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
 
     env = gym.make('MineRLObtainDiamondDense-v0')
@@ -62,6 +66,7 @@ def main():
         agent.train_discriminator(s, a)
 
     net_steps = 0
+    n_episode = 0
     while True:
         obs = env.reset()
         done = False
@@ -76,8 +81,6 @@ def main():
             agent.add_data(obs, action, reward, nobs, done)
             obs = nobs
 
-            env.render()
-
             # To get better view in your training phase, it is suggested
             # to register progress continuously, example when 54% completed
             # aicrowd_helper.register_progress(0.54)
@@ -90,32 +93,36 @@ def main():
             # .current_state: provide indepth state information avaiable as dictionary (key: instance id)
 
             step += 1
+            net_steps += 1
 
-            if step % 128 == 0:
-                for i in range(3):
+            if step % TRAIN_PER == 0:
+                discriminator_loss = 0.0
+                for i in range(TRAIN_DISCRIM_EPOCH):
                     s, a, _, _, _ = data_provider.__next__()
                     s, a = data_wrapper(s, a)
-                    agent.train_discriminator(s, a)
-                agent.train()
+                    discriminator_loss += agent.train_discriminator(s, a)
+                writer.add_scalar('Loss/Discriminator', discriminator_loss / TRAIN_DISCRIM_EPOCH, net_steps)
+
+                policy_loss = agent.train()
+                writer.add_scalar('Loss/Policy', policy_loss, net_steps)
                 agent.save_model()
 
-            net_steps += 1
             if net_steps >= MINERL_TRAINING_MAX_STEPS:
                 break
 
-        logf.write('{}\n'.format(netr))
-        logf.flush()
-        agent.train()
+        policy_loss = agent.train()
         agent.save_model()
+
+        writer.add_scalar('Reward', netr, n_episode)
+        n_episode += 1
 
         if net_steps >= MINERL_TRAINING_MAX_STEPS:
             break
 
-    # Save trained model to train/ directory
+    agent.save_model()
 
     aicrowd_helper.register_progress(1)
     env.close()
-    logf.close()
 
 
 if __name__ == "__main__":
