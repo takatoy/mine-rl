@@ -16,6 +16,7 @@ C_1 = 0.5
 C_2 = 0.01
 EPS_CLIP = 0.1
 K_EPOCH = 4
+BONUS_RATIO = 1.0
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -248,7 +249,7 @@ class Agent:
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
-        bonus = -torch.log(self.discriminator(pov, item, action))
+        bonus = -torch.log(1.0 - self.discriminator(pov, item, action)) * BONUS_RATIO
         return bonus.item()
 
     def train(self):
