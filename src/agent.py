@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
+from torch.nn.utils import clip_grad_norm_
 
 from gym.spaces.utils import flatdim, flatten, unflatten
 
@@ -17,6 +18,7 @@ C_2 = 0.01
 EPS_CLIP = 0.1
 K_EPOCH = 4
 BONUS_RATIO = 1.0
+CLIPPING_VALUE = 10
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -198,24 +200,18 @@ class Agent:
 
         act = self.policy.act(pov, item)
 
-        try:
-            m = Categorical(act)
-            action = m.sample()
-            self.last_lp = m.log_prob(action).item()
-        except:
-            print(act)
+        m = Categorical(act)
+        action = m.sample()
+        self.last_lp = m.log_prob(action).item()
 
         return action.item()
 
     def preprocess(self, obs):
         pov = obs['pov'].astype(np.float) / 255
-        try:
-            item = np.concatenate([
-                flatten(self.observation_space['equipped_items'], obs['equipped_items']),
-                flatten(self.observation_space['inventory'], obs['inventory'])
-            ])
-        except:
-            print(obs)
+        item = np.concatenate([
+            flatten(self.observation_space['equipped_items'], obs['equipped_items']),
+            flatten(self.observation_space['inventory'], obs['inventory'])
+        ])
         return pov, item
 
     def add_data(self, obs, action, reward, n_obs, done):
@@ -266,6 +262,7 @@ class Agent:
 
         self.discriminator_optim.zero_grad()
         loss.backward()
+        clip_grad_norm_(self.discriminator.parameters(), CLIPPING_VALUE)
         self.discriminator_optim.step()
 
         return loss.item()
@@ -294,6 +291,7 @@ class Agent:
 
         self.state_discriminator_optim.zero_grad()
         loss.backward()
+        clip_grad_norm_(self.state_discriminator.parameters(), CLIPPING_VALUE)
         self.state_discriminator_optim.step()
 
         return loss.item()
@@ -345,6 +343,7 @@ class Agent:
 
             self.policy_optim.zero_grad()
             loss.mean().backward()
+            clip_grad_norm_(self.policy.parameters(), CLIPPING_VALUE)
             self.policy_optim.step()
 
             mean_loss += loss.mean().item()
