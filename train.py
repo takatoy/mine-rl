@@ -60,7 +60,7 @@ def main():
 
     agent = Agent(env.observation_space, env.action_space)
 
-    for i in range(1):
+    for i in range(256):
         s, a, _, _, _ = data_provider.__next__()
         s, a = data_wrapper(s, a)
         agent.train_discriminator(s, a)

@@ -249,10 +249,10 @@ class Agent:
         for i in range(n // 2):
             exp_actions.append(flatten(self.action_space, expert_actions[i]))
         exp_actions = torch.tensor(exp_actions, dtype=torch.float, device=device)
-        exp_labels = torch.full((exp_actions.size(0), 1), 0, device=device)
+        exp_labels = torch.full((exp_actions.size(0), 1), 1, device=device)
 
         actions = self.policy.act(povs, items)
-        labels = torch.full((actions.size(0), 1), 1, device=device)
+        labels = torch.full((actions.size(0), 1), 0, device=device)
 
         # discriminator
         probs = self.discriminator(exp_povs, exp_items, exp_actions)
@@ -279,8 +279,8 @@ class Agent:
         exp_povs = torch.tensor(exp_povs, dtype=torch.float, device=device)
         exp_items = torch.tensor(exp_items, dtype=torch.float, device=device)
 
-        exp_labels = torch.full((n // 2, 1), 0, device=device)
-        labels = torch.full((n // 2, 1), 1, device=device)
+        exp_labels = torch.full((n // 2, 1), 1, device=device)
+        labels = torch.full((n // 2, 1), 0, device=device)
 
         _, _, _, _, povs, items, _, _ = self.make_batches(size=n // 2)
 
@@ -301,12 +301,12 @@ class Agent:
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
-        bonus = -torch.log(self.discriminator(pov, item, action)) * 0.5
+        bonus = torch.log(self.discriminator(pov, item, action)) * 0.5
 
         n_pov, n_item = self.preprocess(n_state)
         n_pov = torch.tensor([n_pov], device=device).float()
         n_item = torch.tensor([n_item], device=device).float()
-        bonus += -torch.log(self.state_discriminator(n_pov, n_item)) * 0.5
+        bonus += torch.log(self.state_discriminator(n_pov, n_item)) * 0.5
 
         return bonus.item()
 
