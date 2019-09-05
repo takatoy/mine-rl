@@ -15,7 +15,7 @@ LAMBDA = 0.95
 C_1 = 0.5
 C_2 = 0.01
 EPS_CLIP = 0.1
-K_EPOCH = 3
+K_EPOCH = 4
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -68,14 +68,12 @@ class ItemEncoder(nn.Module):
     def __init__(self, in_features):
         super().__init__()
         self.fc1 = nn.Linear(in_features, 128)
-        self.do1 = nn.Dropout(p=0.5)
         self.fc2 = nn.Linear(128, 128)
-        self.do2 = nn.Dropout(p=0.5)
         self.fc3 = nn.Linear(128, 128)
     
     def forward(self, x):
-        x = F.relu(self.do1(self.fc1(x)))
-        x = F.relu(self.do2(self.fc2(x)))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
         return x
 
@@ -84,14 +82,12 @@ class ValueDecoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.fc1 = nn.Linear(512 + 128, 512)
-        self.do1 = nn.Dropout(p=0.5)
         self.fc2 = nn.Linear(512, 256)
-        self.do2 = nn.Dropout(p=0.5)
         self.fc3 = nn.Linear(256, 1)
 
     def forward(self, x):
-        x = F.relu(self.do1(self.fc1(x)))
-        x = F.relu(self.do2(self.fc2(x)))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
@@ -100,14 +96,12 @@ class ActionDecoder(nn.Module):
     def __init__(self, out_features):
         super().__init__()
         self.fc1 = nn.Linear(512 + 128, 512)
-        self.do1 = nn.Dropout(p=0.5)
         self.fc2 = nn.Linear(512, 256)
-        self.do2 = nn.Dropout(p=0.5)
         self.fc3 = nn.Linear(256, out_features)
 
     def forward(self, x):
-        x = F.relu(self.do1(self.fc1(x)))
-        x = F.relu(self.do2(self.fc2(x)))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
         x = F.softmax(self.fc3(x), dim=-1)
         return x
 
@@ -142,17 +136,15 @@ class Discriminator(nn.Module):
         self.pov = PovEncoder()
         self.item = ItemEncoder(n_item)
         self.fc1 = nn.Linear(640 + n_action, 512)
-        self.do1 = nn.Dropout(p=0.5)
         self.fc2 = nn.Linear(512, 256)
-        self.do2 = nn.Dropout(p=0.5)
         self.fc3 = nn.Linear(256, 1)
 
     def forward(self, p, i, a):
         x = self.pov(p)
         y = self.item(i)
         x = torch.cat([x, y, a], -1)
-        x = F.relu(self.do1(self.fc1(x)))
-        x = F.relu(self.do2(self.fc2(x)))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
         x = torch.sigmoid(self.fc3(x))
         return x
 
@@ -256,7 +248,8 @@ class Agent:
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
-        return -torch.log(self.discriminator(pov, item, action)).item()
+        bonus = -torch.log(self.discriminator(pov, item, action))
+        return bonus.item()
 
     def train(self):
         self.policy.train()
@@ -278,10 +271,9 @@ class Agent:
 
             prob = self.policy.act(pov, item)
             m = Categorical(prob)
-            action = action.squeeze(-1)
             lp = m.log_prob(action)
-            entropy = m.entropy().unsqueeze(-1)
-            ratio = torch.exp(lp - olp.detach()).unsqueeze(-1)
+            entropy = m.entropy()
+            ratio = torch.exp(lp - olp.detach())
 
             surr1 = ratio * adv
             surr2 = torch.clamp(ratio, 1 - EPS_CLIP, 1 + EPS_CLIP) * adv
@@ -321,10 +313,8 @@ class Agent:
         }, path)
 
     def load_model(self, path='train/checkpoint.pth'):
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, map_location=device)
         self.policy.load_state_dict(checkpoint['policy_state_dict'])
         self.policy_optim.load_state_dict(checkpoint['policy_optim_state_dict'])
         self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
         self.discriminator_optim.load_state_dict(checkpoint['discriminator_optim_state_dict'])
-        self.policy.to(device)
-        self.discriminator.to(device)
