@@ -47,7 +47,6 @@ def main():
     data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
 
     env = gym.make('MineRLObtainDiamondDense-v0')
-    # env = FrameSkip(env, skip=4)
     env = ObsWrapper(env)
     env = MoveAxisWrapper(env, -1, 0)
     env = CombineActionWrapper(env)
@@ -105,7 +104,9 @@ def main():
                 break
 
         logf.write('{}\n'.format(netr))
+        logf.flush()
         agent.train()
+        agent.save_model()
 
         if net_steps >= MINERL_TRAINING_MAX_STEPS:
             break
