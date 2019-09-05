@@ -198,9 +198,12 @@ class Agent:
 
         act = self.policy.act(pov, item)
 
-        m = Categorical(act)
-        action = m.sample()
-        self.last_lp = m.log_prob(action).item()
+        try:
+            m = Categorical(act)
+            action = m.sample()
+            self.last_lp = m.log_prob(action).item()
+        except:
+            print(act)
 
         return action.item()
 
