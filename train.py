@@ -60,7 +60,7 @@ def main():
 
     agent = Agent(env.observation_space, env.action_space)
 
-    for i in range(256):
+    for i in range(1):
         s, a, _, _, _ = data_provider.__next__()
         s, a = data_wrapper(s, a)
         agent.train_discriminator(s, a)
@@ -77,7 +77,7 @@ def main():
             action = agent.act(obs)
             nobs, reward, done, info = env.step(action)
             netr += reward
-            reward += agent.bonus_reward(obs, action)
+            reward += agent.bonus_reward(obs, action, nobs)
             agent.add_data(obs, action, reward, nobs, done)
             obs = nobs
 
@@ -96,12 +96,15 @@ def main():
             net_steps += 1
 
             if step % TRAIN_PER == 0:
-                discriminator_loss = 0.0
+                discrim_loss = 0.0
+                state_discrim_loss = 0.0
                 for i in range(TRAIN_DISCRIM_EPOCH):
                     s, a, _, _, _ = data_provider.__next__()
                     s, a = data_wrapper(s, a)
-                    discriminator_loss += agent.train_discriminator(s, a)
-                writer.add_scalar('Loss/Discriminator', discriminator_loss / TRAIN_DISCRIM_EPOCH, net_steps)
+                    discrim_loss += agent.train_discriminator(s, a)
+                    state_discrim_loss += agent.train_state_discriminator(s)
+                writer.add_scalar('Loss/Discriminator', discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
+                writer.add_scalar('Loss/StateDiscriminator', state_discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
 
                 policy_loss = agent.train()
                 writer.add_scalar('Loss/Policy', policy_loss, net_steps)

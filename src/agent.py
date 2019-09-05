@@ -150,6 +150,25 @@ class Discriminator(nn.Module):
         return x
 
 
+class StateDiscriminator(nn.Module):
+    def __init__(self, n_item):
+        super().__init__()
+        self.pov = PovEncoder()
+        self.item = ItemEncoder(n_item)
+        self.fc1 = nn.Linear(640, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, 1)
+
+    def forward(self, p, i):
+        x = self.pov(p)
+        y = self.item(i)
+        x = torch.cat([x, y], -1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = torch.sigmoid(self.fc3(x))
+        return x
+
+
 class Agent:
     def __init__(self, observation_space, action_space):
         self.observation_space = observation_space
@@ -162,6 +181,8 @@ class Agent:
         self.policy_optim = torch.optim.Adam(self.policy.parameters())
         self.discriminator = Discriminator(item_dim, self.action_space.n).to(device)
         self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters())
+        self.state_discriminator = StateDiscriminator(item_dim).to(device)
+        self.state_discriminator_optim = torch.optim.Adam(self.state_discriminator.parameters())
 
         self.memory = Memory(capacity=MEMORY_CAPACITY)
 
@@ -204,6 +225,7 @@ class Agent:
 
     def train_discriminator(self, expert_states, expert_actions):
         self.discriminator.train()
+        self.state_discriminator.train()
 
         n = len(expert_states)
 
@@ -228,10 +250,10 @@ class Agent:
         for i in range(n // 2):
             exp_actions.append(flatten(self.action_space, expert_actions[i]))
         exp_actions = torch.tensor(exp_actions, dtype=torch.float, device=device)
-        exp_labels = torch.full((exp_actions.size(0), 1), 1, device=device)
+        exp_labels = torch.full((exp_actions.size(0), 1), 0, device=device)
 
         actions = self.policy.act(povs, items)
-        labels = torch.full((actions.size(0), 1), 0, device=device)
+        labels = torch.full((actions.size(0), 1), 1, device=device)
 
         # discriminator
         probs = self.discriminator(exp_povs, exp_items, exp_actions)
@@ -245,12 +267,46 @@ class Agent:
 
         return loss.item()
 
-    def bonus_reward(self, state, action):
+    def train_state_discriminator(self, expert_states):
+        n = len(expert_states)
+
+        exp_povs = []
+        exp_items = []
+        for s in expert_states[:n // 2]:
+            pov, item = self.preprocess(s)
+            exp_povs.append(pov)
+            exp_items.append(item)
+        exp_povs = torch.tensor(exp_povs, dtype=torch.float, device=device)
+        exp_items = torch.tensor(exp_items, dtype=torch.float, device=device)
+
+        exp_labels = torch.full((n // 2, 1), 0, device=device)
+        labels = torch.full((n // 2, 1), 1, device=device)
+
+        _, _, _, _, povs, items, _, _ = self.make_batches(size=n // 2)
+
+        probs = self.state_discriminator(exp_povs, exp_items)
+        loss = self.bce_loss(probs, exp_labels)
+        probs = self.state_discriminator(povs, items)
+        loss += self.bce_loss(probs, labels)
+
+        self.state_discriminator_optim.zero_grad()
+        loss.backward()
+        self.state_discriminator_optim.step()
+
+        return loss.item()
+
+    def bonus_reward(self, state, action, n_state):
         pov, item = self.preprocess(state)
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
-        bonus = -torch.log(1.0 - self.discriminator(pov, item, action)) * BONUS_RATIO
+        bonus = -torch.log(1.0 - self.discriminator(pov, item, action)) * 0.5
+
+        n_pov, n_item = self.preprocess(n_state)
+        n_pov = torch.tensor([n_pov], device=device).float()
+        n_item = torch.tensor([n_item], device=device).float()
+        bonus += -torch.log(1.0 - self.state_discriminator(n_pov, n_item)) * 0.5
+
         return bonus.item()
 
     def train(self):
@@ -292,8 +348,8 @@ class Agent:
 
         return mean_loss / K_EPOCH
 
-    def make_batches(self):
-        samples = self.memory.sample(BATCH_SIZE)
+    def make_batches(self, size=BATCH_SIZE):
+        samples = self.memory.sample(size)
         samples = list(zip(*samples))  # transpose
 
         pov = torch.tensor(samples[0], dtype=torch.float, device=device)
