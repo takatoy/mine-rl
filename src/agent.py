@@ -310,7 +310,7 @@ class Agent:
         n_item = torch.tensor([n_item], device=device).float()
         bonus += -torch.log(self.state_discriminator(n_pov, n_item)) * 0.3
 
-        bonus = torch.clamp(bonus, min=-5)
+        bonus = torch.clamp(bonus, min=-1)
 
         return bonus.item()
 
