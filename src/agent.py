@@ -19,6 +19,7 @@ EPS_CLIP = 0.2
 K_EPOCH = 3
 BONUS_RATIO = 1.0
 CLIPPING_VALUE = 10
+LEARNING_RATE = 0.0001
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.set_printoptions(profile="full")
@@ -181,11 +182,11 @@ class Agent:
             flatdim(self.observation_space['inventory'])
 
         self.policy = Policy(item_dim, self.action_space.n).to(device)
-        self.policy_optim = torch.optim.Adam(self.policy.parameters())
+        self.policy_optim = torch.optim.Adam(self.policy.parameters(), lr=LEARNING_RATE)
         self.discriminator = Discriminator(item_dim, self.action_space.n).to(device)
-        self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters())
+        self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters(), lr=LEARNING_RATE)
         self.state_discriminator = StateDiscriminator(item_dim).to(device)
-        self.state_discriminator_optim = torch.optim.Adam(self.state_discriminator.parameters())
+        self.state_discriminator_optim = torch.optim.Adam(self.state_discriminator.parameters(), lr=LEARNING_RATE)
 
         self.memory = Memory(capacity=MEMORY_CAPACITY)
 
