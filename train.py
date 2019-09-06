@@ -68,7 +68,7 @@ def main():
 
     agent = Agent(env.observation_space, env.action_space)
     data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
-    # train_from_expert(agent, data)
+    train_from_expert(agent, data)
 
     data_provider = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
