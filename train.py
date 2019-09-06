@@ -42,23 +42,12 @@ parser = Parser('performance/',
                 submission_timeout=MINERL_TRAINING_TIMEOUT*60,
                 initial_poll_timeout=600)
 
-TRAIN_PER = 128
+TRAIN_EVERY = 128
+TRAIN_FROM_EXPERT_EVERY = 1
 TRAIN_DISCRIM_EPOCH = 3
 
-def main():
-    writer = SummaryWriter()
-
-    data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
-
-    env = gym.make('MineRLObtainDiamondDense-v0')
-    env = ObsWrapper(env)
-    env = MoveAxisWrapper(env, -1, 0)
-    env = CombineActionWrapper(env)
-    env = SerialDiscreteCombineActionWrapper(env)
-
-    agent = Agent(env.observation_space, env.action_space)
-
-    for s, a, r, ns, d in data.sarsd_iter(num_epochs=20, max_sequence_len=128):
+def train_from_expert(agent, data_source):
+    for s, a, r, ns, d in data_source.sarsd_iter(num_epochs=1, max_sequence_len=128):
         s = data_state_wrapper(s)
         ns = data_state_wrapper(ns)
         a = data_action_wrapper(a)
@@ -67,6 +56,19 @@ def main():
             agent.add_data(state, action, reward, n_state, done)
         agent.train()
         agent.train_discriminator(s, a)
+
+def main():
+    writer = SummaryWriter()
+
+    env = gym.make('MineRLObtainDiamondDense-v0')
+    env = ObsWrapper(env)
+    env = MoveAxisWrapper(env, -1, 0)
+    env = CombineActionWrapper(env)
+    env = SerialDiscreteCombineActionWrapper(env)
+
+    agent = Agent(env.observation_space, env.action_space)
+    data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
+    train_from_expert(agent, data)
 
     data_provider = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
@@ -100,7 +102,7 @@ def main():
             step += 1
             net_steps += 1
 
-            if step % TRAIN_PER == 0:
+            if step % TRAIN_EVERY == 0:
                 discrim_loss = 0.0
                 state_discrim_loss = 0.0
                 for i in range(TRAIN_DISCRIM_EPOCH):
@@ -117,12 +119,14 @@ def main():
 
             if net_steps >= MINERL_TRAINING_MAX_STEPS:
                 break
-
-        policy_loss = agent.train()
-        agent.save_model()
-
+        
         writer.add_scalar('Reward', netr, n_episode)
         n_episode += 1
+
+        if n_episode % TRAIN_FROM_EXPERT_EVERY == 0:
+            train_from_expert(agent, data)
+
+        agent.save_model()
 
         if net_steps >= MINERL_TRAINING_MAX_STEPS:
             break
