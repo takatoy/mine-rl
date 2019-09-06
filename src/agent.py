@@ -62,7 +62,7 @@ class PovEncoder(nn.Module):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = x.view(x.size()[0], -1)
+        x = x.view(x.size(0), -1)
         x = F.relu(self.fc(x))
         return x
 
@@ -207,7 +207,7 @@ class Agent:
         return action.item()
 
     def preprocess(self, obs):
-        pov = obs['pov'].astype(np.float) / 255
+        pov = obs['pov'].astype(np.float) / 255.0
         item = np.concatenate([
             flatten(self.observation_space['equipped_items'], obs['equipped_items']),
             flatten(self.observation_space['inventory'], obs['inventory'])
@@ -301,12 +301,14 @@ class Agent:
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
-        bonus = torch.log(self.discriminator(pov, item, action)) * 0.5
+        bonus = -torch.log(1.0 - self.discriminator(pov, item, action)) * 0.5
 
         n_pov, n_item = self.preprocess(n_state)
         n_pov = torch.tensor([n_pov], device=device).float()
         n_item = torch.tensor([n_item], device=device).float()
-        bonus += torch.log(self.state_discriminator(n_pov, n_item)) * 0.5
+        bonus += -torch.log(1.0 - self.state_discriminator(n_pov, n_item)) * 0.5
+
+        print('bonus: {}'.format(bonus.item()))
 
         return bonus.item()
 
