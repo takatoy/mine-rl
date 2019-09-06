@@ -15,7 +15,7 @@ coloredlogs.install(logging.DEBUG)
 
 from collections import OrderedDict
 from src.agent import Agent
-from src.env_wrappers import CombineActionWrapper, SerialDiscreteCombineActionWrapper, FrameSkip, MoveAxisWrapper, ObsWrapper, data_wrapper
+from src.env_wrappers import CombineActionWrapper, SerialDiscreteCombineActionWrapper, FrameSkip, MoveAxisWrapper, ObsWrapper, data_action_wrapper, data_state_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
 # All the evaluations will be evaluated on MineRLObtainDiamond-v0 environment
@@ -56,13 +56,23 @@ def main():
     env = CombineActionWrapper(env)
     env = SerialDiscreteCombineActionWrapper(env)
 
-    data_provider = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
-
     agent = Agent(env.observation_space, env.action_space)
+
+    for s, a, r, ns, d in data.sarsd_iter(num_epochs=20, max_sequence_len=128):
+        s = data_state_wrapper(s)
+        ns = data_state_wrapper(ns)
+        a = data_action_wrapper(a)
+        for state, action, reward, n_state, done in zip(s, a, r, ns, d):
+            agent.act(state, action)
+            agent.add_data(state, action, reward, n_state, done)
+        agent.train()
+
+    data_provider = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
     for i in range(256):
         s, a, _, _, _ = data_provider.__next__()
-        s, a = data_wrapper(s, a)
+        s = data_state_wrapper(s)
+        a = data_action_wrapper(a)
         agent.train_discriminator(s, a)
 
     net_steps = 0

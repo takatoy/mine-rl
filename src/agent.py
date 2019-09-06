@@ -195,7 +195,7 @@ class Agent:
 
         self.last_lp = None
 
-    def act(self, obs):
+    def act(self, obs, action=None):
         pov, item = self.preprocess(obs)
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
@@ -203,7 +203,7 @@ class Agent:
         act = self.policy.act(pov, item)
 
         m = Categorical(act)
-        action = m.sample()
+        action = torch.tensor(action) if action is not None else m.sample()
         self.last_lp = m.log_prob(action).item()
 
         return action.item()

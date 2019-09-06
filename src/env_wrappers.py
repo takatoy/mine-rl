@@ -188,7 +188,7 @@ class SerialDiscreteCombineActionWrapper(gym.ActionWrapper):
         return original_space_action
 
 
-def action_wrapper(action):
+def _data_action_wrapper(action):
     # discrete actions
     mapping = {
         'forward': 1,
@@ -228,15 +228,16 @@ def action_wrapper(action):
     action = random.choice(candidate)
     return action
 
-
-def data_wrapper(data_states, data_actions):
+def data_action_wrapper(data_actions):
     actions = []
     for i in range(len(data_actions['attack'])):
         a = {}
         for k, v in data_actions.items():
             a[k] = v[i]
-        actions.append(action_wrapper(a))
-    
+        actions.append(_data_action_wrapper(a))
+    return actions
+
+def data_state_wrapper(data_states):
     states = []
     for i in range(len(data_states['pov'])):
         s = {
@@ -251,5 +252,4 @@ def data_wrapper(data_states, data_actions):
             s['inventory'][k] = v[i]
         s['pov'] = np.moveaxis(data_states['pov'][i], -1, 0)
         states.append(s)
-    
-    return states, actions
+    return states
