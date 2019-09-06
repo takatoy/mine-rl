@@ -303,14 +303,12 @@ class Agent:
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
-        bonus = torch.log(self.discriminator(pov, item, action)) * 0.7
+        bonus = self.discriminator(pov, item, action) * 0.2
 
         n_pov, n_item = self.preprocess(n_state)
         n_pov = torch.tensor([n_pov], device=device).float()
         n_item = torch.tensor([n_item], device=device).float()
-        bonus += -torch.log(self.state_discriminator(n_pov, n_item)) * 0.3
-
-        bonus = torch.clamp(bonus, min=-1)
+        bonus += self.state_discriminator(n_pov, n_item) * 0.2
 
         return bonus.item()
 
