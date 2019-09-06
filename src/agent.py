@@ -141,15 +141,17 @@ class Discriminator(nn.Module):
         self.pov = PovEncoder()
         self.item = ItemEncoder(n_item)
         self.fc1 = nn.Linear(640 + n_action, 512)
+        self.do1 = nn.Dropout(p=0.5)
         self.fc2 = nn.Linear(512, 256)
+        self.do2 = nn.Dropout(p=0.5)
         self.fc3 = nn.Linear(256, 1)
 
     def forward(self, p, i, a):
         x = self.pov(p)
         y = self.item(i)
         x = torch.cat([x, y, a], -1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = F.relu(self.do1(self.fc1(x)))
+        x = F.relu(self.do2(self.fc2(x)))
         x = torch.sigmoid(self.fc3(x))
         return x
 
@@ -160,15 +162,17 @@ class StateDiscriminator(nn.Module):
         self.pov = PovEncoder()
         self.item = ItemEncoder(n_item)
         self.fc1 = nn.Linear(640, 512)
+        self.do1 = nn.Dropout(p=0.5)
         self.fc2 = nn.Linear(512, 256)
+        self.do2 = nn.Dropout(p=0.5)
         self.fc3 = nn.Linear(256, 1)
 
     def forward(self, p, i):
         x = self.pov(p)
         y = self.item(i)
         x = torch.cat([x, y], -1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = F.relu(self.do1(self.fc1(x)))
+        x = F.relu(self.do2(self.fc2(x)))
         x = torch.sigmoid(self.fc3(x))
         return x
 
