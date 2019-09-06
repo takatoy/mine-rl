@@ -66,14 +66,9 @@ def main():
             agent.act(state, action)
             agent.add_data(state, action, reward, n_state, done)
         agent.train()
+        agent.train_discriminator(s, a)
 
     data_provider = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
-
-    for i in range(256):
-        s, a, _, _, _ = data_provider.__next__()
-        s = data_state_wrapper(s)
-        a = data_action_wrapper(a)
-        agent.train_discriminator(s, a)
 
     net_steps = 0
     n_episode = 0
