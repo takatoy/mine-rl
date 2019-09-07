@@ -246,21 +246,20 @@ class Agent:
         return loss.item()
 
     def train_state_discriminator(self, expert_states):
-        n = len(expert_states)
+        _, _, _, _, povs, items, _, _ = self.make_batches()
+        n = povs.size(0)
 
         exp_povs = []
         exp_items = []
-        for s in expert_states[:n // 2]:
+        for s in expert_states[:n]:
             pov, item = self.preprocess(s)
             exp_povs.append(pov)
             exp_items.append(item)
         exp_povs = torch.tensor(exp_povs, dtype=torch.float, device=device)
         exp_items = torch.tensor(exp_items, dtype=torch.float, device=device)
 
-        exp_labels = torch.full((n // 2, 1), 1, device=device)
-        labels = torch.full((n // 2, 1), 0, device=device)
-
-        _, _, _, _, povs, items, _, _ = self.make_batches(size=n // 2)
+        labels = torch.full((povs.size(0), 1), 0, device=device)
+        exp_labels = torch.full((exp_povs.size(0), 1), 1, device=device)
 
         probs = self.state_discriminator(exp_povs, exp_items)
         loss = self.bce_loss(probs, exp_labels)
@@ -325,7 +324,6 @@ class Agent:
             self.policy_optim.step()
 
             mean_loss += loss.mean().item()
-
         del self.data[:]
 
         return mean_loss / K_EPOCH

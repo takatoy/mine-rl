@@ -44,7 +44,7 @@ parser = Parser('performance/',
 
 TRAIN_EVERY = 128
 TRAIN_FROM_EXPERT_EVERY = 50
-TRAIN_DISCRIM_EPOCH = 3
+TRAIN_DISCRIM_EPOCH = 1
 
 def train_from_expert(agent, data_source):
     for s, a, r, ns, d in data_source.sarsd_iter(num_epochs=1, max_sequence_len=128):
@@ -54,8 +54,9 @@ def train_from_expert(agent, data_source):
         for state, action, reward, n_state, done in zip(s, a, r, ns, d):
             agent.act(state, action)
             agent.add_data(state, action, reward, n_state, done)
-        agent.train()
         agent.train_discriminator(s, a)
+        agent.train()
+        agent.save_model()
 
 def main():
     writer = SummaryWriter()
@@ -68,9 +69,9 @@ def main():
 
     agent = Agent(env.observation_space, env.action_space)
     data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
-    train_from_expert(agent, data)
+    # train_from_expert(agent, data)
 
-    data_provider = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
+    data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
     net_steps = 0
     n_episode = 0
@@ -106,7 +107,7 @@ def main():
                 discrim_loss = 0.0
                 state_discrim_loss = 0.0
                 for i in range(TRAIN_DISCRIM_EPOCH):
-                    s, a, _, _, _ = data_provider.__next__()
+                    s, a, _, _, _ = data_source.__next__()
                     s = data_state_wrapper(s)
                     a = data_action_wrapper(a)
                     discrim_loss += agent.train_discriminator(s, a)
