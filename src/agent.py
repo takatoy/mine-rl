@@ -9,7 +9,6 @@ from torch.nn.utils import clip_grad_norm_
 
 from gym.spaces.utils import flatdim, flatten, unflatten
 
-MEMORY_CAPACITY = 512
 BATCH_SIZE = 128
 GAMMA = 0.99
 LAMBDA = 0.95
@@ -23,33 +22,6 @@ LEARNING_RATE = 0.0001
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.set_printoptions(profile="full")
-
-
-class Memory:
-    def __init__(self, capacity):
-        self.cursor = 0
-        self.capacity = capacity
-        self.is_max = False
-        self.data = []
-
-    def push(self, datum):
-        if self.is_max:
-            self.data[self.cursor] = datum
-        else:
-            self.data.append(datum)
-        
-        self.cursor += 1
-        if self.cursor == self.capacity:
-            self.is_max = True
-        self.cursor %= self.capacity
-
-    def sample(self, batch_size):
-        high = self.capacity if self.is_max else self.cursor
-        idx = random.sample(range(0, high), batch_size)
-        batches = []
-        for i in idx:
-            batches.append(self.data[i])
-        return batches
 
 
 class PovEncoder(nn.Module):
@@ -192,12 +164,12 @@ class Agent:
         self.state_discriminator = StateDiscriminator(item_dim).to(device)
         self.state_discriminator_optim = torch.optim.Adam(self.state_discriminator.parameters(), lr=LEARNING_RATE)
 
-        self.memory = Memory(capacity=MEMORY_CAPACITY)
-
         self.mse_loss = nn.MSELoss()
         self.bce_loss = nn.BCELoss()
 
         self.last_lp = None
+
+        self.data = []
 
     def act(self, obs, action=None):
         pov, item = self.preprocess(obs)
@@ -226,7 +198,7 @@ class Agent:
         action = flatten(self.action_space, action)
         action = np.argmax(action)  # to one-hot
         datum = [pov, item, action, reward, n_pov, n_item, done, self.last_lp]
-        self.memory.push(datum)
+        self.data.append(datum)
 
     def train_discriminator(self, expert_states, expert_actions):
         self.discriminator.train()
@@ -354,11 +326,12 @@ class Agent:
 
             mean_loss += loss.mean().item()
 
+        del self.data[:]
+
         return mean_loss / K_EPOCH
 
-    def make_batches(self, size=BATCH_SIZE):
-        samples = self.memory.sample(size)
-        samples = list(zip(*samples))  # transpose
+    def make_batches(self):
+        samples = list(zip(*self.data))  # transpose
 
         pov = torch.tensor(samples[0], dtype=torch.float, device=device)
         item = torch.tensor(samples[1], dtype=torch.float, device=device)
