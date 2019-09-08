@@ -74,7 +74,8 @@ def main():
     data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
     data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
-    # train_from_expert(agent, data_source)
+    # behavioral cloning
+    train_from_expert(agent, data_source)
 
     net_steps = 0
     n_episode = 0

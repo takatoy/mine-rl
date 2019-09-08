@@ -308,7 +308,7 @@ class Agent:
                 A = GAMMA * LAMBDA * A + d[0]
                 adv.insert(0, [A])
             adv = torch.tensor(adv, dtype=torch.float, device=device)
-            adv = (adv - adv.mean()) / adv.std()
+            adv = (adv - adv.mean()) / (adv.std() + 1e-8)
             value_target = s_val + adv
 
             prob = self.policy.act(pov, item)
