@@ -86,6 +86,7 @@ def main():
         obs = env.reset()
         done = False
         netr = 0
+        net_bonus_r = 0
         nobs = None
         step = 0
         while not done:
@@ -93,6 +94,7 @@ def main():
             nobs, reward, done, info = env.step(action)
             netr += reward
             reward += agent.bonus_reward(obs, action, nobs)
+            net_bonus_r += reward
             agent.add_data(obs, action, reward, nobs, done)
             obs = nobs
 
@@ -130,6 +132,7 @@ def main():
                 break
         
         writer.add_scalar('Reward', netr, n_episode)
+        writer.add_scalar('Bonus Reward', net_bonus_r, n_episode)
         n_episode += 1
 
         if n_episode % TRAIN_FROM_EXPERT_INTERVAL == 0:

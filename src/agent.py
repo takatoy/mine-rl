@@ -9,15 +9,17 @@ from torch.nn.utils import clip_grad_norm_
 
 from gym.spaces.utils import flatdim, flatten, unflatten
 
+########## params ##########
 GAMMA = 0.99
 LAMBDA = 0.95
 C_1 = 1.0
 C_2 = 0.01
 EPS_CLIP = 0.2
 K_EPOCH = 3
-BONUS_RATIO = 0.6
+BONUS_RATIO = 0.5
 CLIPPING_VALUE = 10
 LEARNING_RATE = 0.001
+############################
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.set_printoptions(profile="full")
@@ -280,7 +282,7 @@ class Agent:
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
         pred = self.discriminator(pov, item, action)
-        reward = torch.clamp(pred.log(), min=-5)
+        reward = torch.clamp(pred.log(), min=-5) * BONUS_RATIO
 
         # n_pov, n_item = self.preprocess(n_state)
         # n_pov = torch.tensor([n_pov], device=device).float()
