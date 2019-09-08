@@ -308,6 +308,8 @@ class Agent:
                 A = GAMMA * LAMBDA * A + d[0]
                 adv.insert(0, [A])
             adv = torch.tensor(adv, dtype=torch.float, device=device)
+            adv = (adv - adv.mean()) / adv.std()
+            value_target = s_val + adv
 
             prob = self.policy.act(pov, item)
             m = Categorical(prob)
@@ -316,9 +318,9 @@ class Agent:
             ratio = torch.exp(lp - olp.detach())
 
             surr1 = ratio * adv
-            surr2 = torch.clamp(ratio, 1 - EPS_CLIP, 1 + EPS_CLIP) * adv
+            surr2 = torch.clamp(ratio, 1.0 - EPS_CLIP, 1.0 + EPS_CLIP) * adv
             loss = -torch.min(surr1, surr2) \
-                + C_1 * self.mse_loss(s_val, td_target.detach()) \
+                + C_1 * self.mse_loss(s_val, value_target.detach()) \
                 - C_2 * entropy
 
             self.policy_optim.zero_grad()

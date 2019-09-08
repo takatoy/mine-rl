@@ -64,6 +64,7 @@ def main():
     writer = SummaryWriter()
 
     env = gym.make('MineRLObtainDiamondDense-v0')
+    env = FrameSkip(env, 4)
     env = ObsWrapper(env)
     env = MoveAxisWrapper(env, -1, 0)
     env = CombineActionWrapper(env)
