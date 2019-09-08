@@ -32,11 +32,11 @@ class PovEncoder(nn.Module):
         self.fc = nn.Linear(1024, 512)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
+        x = F.leaky_relu(self.conv1(x))
+        x = F.leaky_relu(self.conv2(x))
+        x = F.leaky_relu(self.conv3(x))
         x = x.view(x.size(0), -1)
-        x = F.relu(self.fc(x))
+        x = F.leaky_relu(self.fc(x))
         return x
 
 
@@ -48,9 +48,9 @@ class ItemEncoder(nn.Module):
         self.fc3 = nn.Linear(128, 128)
     
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
+        x = F.leaky_relu(self.fc1(x))
+        x = F.leaky_relu(self.fc2(x))
+        x = F.leaky_relu(self.fc3(x))
         return x
 
 
@@ -62,8 +62,8 @@ class ValueDecoder(nn.Module):
         self.fc3 = nn.Linear(256, 1)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = F.leaky_relu(self.fc1(x))
+        x = F.leaky_relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
@@ -76,8 +76,8 @@ class ActionDecoder(nn.Module):
         self.fc3 = nn.Linear(256, out_features)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = F.leaky_relu(self.fc1(x))
+        x = F.leaky_relu(self.fc2(x))
         x = F.softmax(self.fc3(x), dim=-1)
         return x
 
@@ -121,8 +121,8 @@ class Discriminator(nn.Module):
         x = self.pov(p)
         y = self.item(i)
         x = torch.cat([x, y, a], -1)
-        x = F.relu(self.do1(self.fc1(x)))
-        x = F.relu(self.do2(self.fc2(x)))
+        x = F.leaky_relu(self.do1(self.fc1(x)))
+        x = F.leaky_relu(self.do2(self.fc2(x)))
         x = torch.sigmoid(self.fc3(x))
         return x
 
@@ -142,8 +142,8 @@ class StateDiscriminator(nn.Module):
         x = self.pov(p)
         y = self.item(i)
         x = torch.cat([x, y], -1)
-        x = F.relu(self.do1(self.fc1(x)))
-        x = F.relu(self.do2(self.fc2(x)))
+        x = F.leaky_relu(self.do1(self.fc1(x)))
+        x = F.leaky_relu(self.do2(self.fc2(x)))
         x = torch.sigmoid(self.fc3(x))
         return x
 
@@ -157,11 +157,12 @@ class Agent:
             flatdim(self.observation_space['inventory'])
 
         self.policy = Policy(item_dim, self.action_space.n).to(device)
-        self.policy_optim = torch.optim.Adam(self.policy.parameters(), lr=LEARNING_RATE)
         self.discriminator = Discriminator(item_dim, self.action_space.n).to(device)
+        # self.state_discriminator = StateDiscriminator(item_dim).to(device)
+
+        self.policy_optim = torch.optim.Adam(self.policy.parameters(), lr=LEARNING_RATE)
         self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters(), lr=LEARNING_RATE)
-        self.state_discriminator = StateDiscriminator(item_dim).to(device)
-        self.state_discriminator_optim = torch.optim.Adam(self.state_discriminator.parameters(), lr=LEARNING_RATE)
+        # self.state_discriminator_optim = torch.optim.Adam(self.state_discriminator.parameters(), lr=LEARNING_RATE)
 
         self.mse_loss = nn.MSELoss()
         self.bce_loss = nn.BCELoss()
@@ -201,7 +202,6 @@ class Agent:
 
     def train_discriminator(self, expert_states, expert_actions):
         self.discriminator.train()
-        self.state_discriminator.train()
 
         n = len(expert_states)
 
@@ -245,6 +245,8 @@ class Agent:
         return loss.item()
 
     def train_state_discriminator(self, expert_states):
+        self.state_discriminator.train()
+
         _, _, _, _, povs, items, _, _ = self.make_batches()
         n = povs.size(0)
 
@@ -277,14 +279,16 @@ class Agent:
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
-        bonus = self.discriminator(pov, item, action) * BONUS_RATIO
+        pred = self.discriminator(pov, item, action)
+        reward = torch.clamp(pred.log(), min=-5)
 
-        n_pov, n_item = self.preprocess(n_state)
-        n_pov = torch.tensor([n_pov], device=device).float()
-        n_item = torch.tensor([n_item], device=device).float()
-        bonus += self.state_discriminator(n_pov, n_item) * BONUS_RATIO
+        # n_pov, n_item = self.preprocess(n_state)
+        # n_pov = torch.tensor([n_pov], device=device).float()
+        # n_item = torch.tensor([n_item], device=device).float()
+        # pred += self.state_discriminator(n_pov, n_item)
+        # reward += torch.clamp(pred.log(), min=-5)
 
-        return bonus.item()
+        return reward.item()
 
     def train(self):
         self.policy.train()

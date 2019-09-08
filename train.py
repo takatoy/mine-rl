@@ -73,7 +73,7 @@ def main():
     data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
     data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
-    train_from_expert(agent, data_source)
+    # train_from_expert(agent, data_source)
 
     net_steps = 0
     n_episode = 0
@@ -107,15 +107,15 @@ def main():
 
             if step % TRAIN_INTERVAL == 0:
                 discrim_loss = 0.0
-                state_discrim_loss = 0.0
+                # state_discrim_loss = 0.0
                 for i in range(TRAIN_DISCRIM_EPOCH):
                     s, a, _, _, _ = data_source.__next__()
                     s = data_state_wrapper(s)
                     a = data_action_wrapper(a)
                     discrim_loss += agent.train_discriminator(s, a)
-                    state_discrim_loss += agent.train_state_discriminator(s)
+                    # state_discrim_loss += agent.train_state_discriminator(s)
                 writer.add_scalar('Loss/Discriminator', discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
-                writer.add_scalar('Loss/StateDiscriminator', state_discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
+                # writer.add_scalar('Loss/StateDiscriminator', state_discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
 
                 policy_loss = agent.train()
                 writer.add_scalar('Loss/Policy', policy_loss, net_steps)
