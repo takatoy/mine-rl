@@ -164,7 +164,7 @@ class Agent:
         self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters(), lr=LEARNING_RATE)
         # self.state_discriminator_optim = torch.optim.Adam(self.state_discriminator.parameters(), lr=LEARNING_RATE)
 
-        self.mse_loss = nn.MSELoss()
+        self.mse_loss = nn.MSELoss(reduction='none')
         self.bce_loss = nn.BCELoss()
 
         self.last_lp = None
@@ -314,8 +314,8 @@ class Agent:
             prob = self.policy.act(pov, item)
             m = Categorical(prob)
             lp = m.log_prob(action)
-            entropy = m.entropy()
-            ratio = torch.exp(lp - olp.detach())
+            entropy = m.entropy().unsqueeze(-1)
+            ratio = torch.exp(lp - olp.detach()).unsqueeze(-1)
 
             surr1 = ratio * adv
             surr2 = torch.clamp(ratio, 1.0 - EPS_CLIP, 1.0 + EPS_CLIP) * adv

@@ -42,10 +42,13 @@ parser = Parser('performance/',
                 submission_timeout=MINERL_TRAINING_TIMEOUT*60,
                 initial_poll_timeout=600)
 
+########## params ##########
 TRAIN_INTERVAL = 128
 TRAIN_FROM_EXPERT_INTERVAL = 50
-TRAIN_DISCRIM_EPOCH = 1
 TRAIN_FROM_EXPERT_EPOCH = 500
+TRAIN_DISCRIM_EPOCH = 1
+FRAME_SKIP = 4
+############################
 
 def train_from_expert(agent, data_source):
     for _ in range(TRAIN_FROM_EXPERT_EPOCH):
@@ -64,7 +67,7 @@ def main():
     writer = SummaryWriter()
 
     env = gym.make('MineRLObtainDiamondDense-v0')
-    env = FrameSkip(env, 4)
+    env = FrameSkip(env, FRAME_SKIP)
     env = ObsWrapper(env)
     env = MoveAxisWrapper(env, -1, 0)
     env = CombineActionWrapper(env)
@@ -75,7 +78,7 @@ def main():
     data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
     # behavioral cloning
-    train_from_expert(agent, data_source)
+    # train_from_expert(agent, data_source)
 
     net_steps = 0
     n_episode = 0
