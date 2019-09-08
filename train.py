@@ -42,12 +42,14 @@ parser = Parser('performance/',
                 submission_timeout=MINERL_TRAINING_TIMEOUT*60,
                 initial_poll_timeout=600)
 
-TRAIN_EVERY = 128
-TRAIN_FROM_EXPERT_EVERY = 50
+TRAIN_INTERVAL = 128
+TRAIN_FROM_EXPERT_INTERVAL = 50
 TRAIN_DISCRIM_EPOCH = 1
+TRAIN_FROM_EXPERT_EPOCH = 500
 
 def train_from_expert(agent, data_source):
-    for s, a, r, ns, d in data_source.sarsd_iter(num_epochs=1, max_sequence_len=128):
+    for _ in range(TRAIN_FROM_EXPERT_EPOCH):
+        s, a, r, ns, d = data_source.__next__()
         s = data_state_wrapper(s)
         ns = data_state_wrapper(ns)
         a = data_action_wrapper(a)
@@ -69,9 +71,9 @@ def main():
 
     agent = Agent(env.observation_space, env.action_space)
     data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
-    # train_from_expert(agent, data)
-
     data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
+
+    train_from_expert(agent, data_source)
 
     net_steps = 0
     n_episode = 0
@@ -103,7 +105,7 @@ def main():
             step += 1
             net_steps += 1
 
-            if step % TRAIN_EVERY == 0:
+            if step % TRAIN_INTERVAL == 0:
                 discrim_loss = 0.0
                 state_discrim_loss = 0.0
                 for i in range(TRAIN_DISCRIM_EPOCH):
@@ -125,7 +127,7 @@ def main():
         writer.add_scalar('Reward', netr, n_episode)
         n_episode += 1
 
-        if n_episode % TRAIN_FROM_EXPERT_EVERY == 0:
+        if n_episode % TRAIN_FROM_EXPERT_INTERVAL == 0:
             train_from_expert(agent, data)
 
         agent.save_model()
