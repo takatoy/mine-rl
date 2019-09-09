@@ -78,7 +78,7 @@ def main():
     data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
     # behavioral cloning
-    train_from_expert(agent, data_source)
+    # train_from_expert(agent, data_source)
 
     net_steps = 0
     n_episode = 0

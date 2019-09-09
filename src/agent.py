@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torch.autograd as autograd
 from torch.distributions import Categorical
 from torch.nn.utils import clip_grad_norm_
 
@@ -16,7 +17,7 @@ C_1 = 1.0
 C_2 = 0.01
 EPS_CLIP = 0.2
 K_EPOCH = 3
-BONUS_RATIO = 0.0001
+BONUS_RATIO = 0.01
 CLIPPING_VALUE = 10
 LEARNING_RATE = 0.001
 ############################
@@ -125,7 +126,7 @@ class Discriminator(nn.Module):
         x = torch.cat([x, y, a], -1)
         x = F.leaky_relu(self.do1(self.fc1(x)))
         x = F.leaky_relu(self.do2(self.fc2(x)))
-        x = torch.sigmoid(self.fc3(x))
+        x = self.fc3(x)
         return x
 
 
@@ -134,11 +135,11 @@ class Agent:
         self.observation_space = observation_space
         self.action_space = action_space
 
-        item_dim = flatdim(self.observation_space['equipped_items']) + \
+        self.item_dim = flatdim(self.observation_space['equipped_items']) + \
             flatdim(self.observation_space['inventory'])
 
-        self.policy = Policy(item_dim, self.action_space.n).to(device)
-        self.discriminator = Discriminator(item_dim, self.action_space.n).to(device)
+        self.policy = Policy(self.item_dim, self.action_space.n).to(device)
+        self.discriminator = Discriminator(self.item_dim, self.action_space.n).to(device)
 
         self.policy_optim = torch.optim.Adam(self.policy.parameters(), lr=LEARNING_RATE)
         self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters(), lr=LEARNING_RATE)
@@ -183,7 +184,12 @@ class Agent:
         self.discriminator.train()
 
         n = len(expert_states)
+        if n % 2 == 1:
+            expert_states = expert_states[:-1]
+            expert_actions = expert_actions[:-1]
+            n -= 1
 
+        # shuffle data
         expert_states = np.array(expert_states)
         expert_actions = np.array(expert_actions)
         idx = np.random.permutation(n)
@@ -211,20 +217,35 @@ class Agent:
         for i in range(n // 2):
             exp_actions.append(flatten(self.action_space, expert_actions[i]))
         exp_actions = torch.tensor(exp_actions, dtype=torch.float, device=device)
-        exp_labels = torch.full((exp_actions.size(0), 1), 1, device=device)
-
         actions = self.policy.act(povs, items)
-        labels = torch.full((actions.size(0), 1), 0, device=device)
 
-        # discriminator
-        probs = self.discriminator(exp_povs, exp_items, exp_actions)
-        loss = self.bce_loss(probs, exp_labels)
-        probs = self.discriminator(povs, items, actions.detach())
-        loss += self.bce_loss(probs, labels)
+        # train discriminator with WGAN-gp
+        exp_pred = self.discriminator(exp_povs, exp_items, exp_actions)
+        exp_loss = exp_pred.mean()
+
+        fake_pred = self.discriminator(povs, items, actions.detach())
+        fake_loss = fake_pred.mean()
+
+        # gradient penalty
+        alpha1 = torch.rand(n // 2, *self.observation_space['pov'].shape).to(device)
+        alpha2 = torch.rand(n // 2, self.item_dim)
+        alpha3 = torch.rand(n // 2, self.action_space.n)
+        pov_interpolates = (alpha1 * exp_povs + ((1 - alpha1) * povs)).requires_grad_()
+        item_interpolates = (alpha2 * exp_items + ((1 - alpha2) * items)).requires_grad_()
+        action_interpolates = (alpha3 * exp_actions + ((1 - alpha3) * actions.detach())).requires_grad_()
+        pred = self.discriminator(pov_interpolates, item_interpolates, action_interpolates)
+        gradients = autograd.grad(outputs=pred,
+                                  inputs=[pov_interpolates, item_interpolates, action_interpolates],
+                                  grad_outputs=torch.ones(pred.size()).to(device),
+                                  create_graph=True, retain_graph=True, only_inputs=True)[0]
+        gradients = gradients.view(n // 2, -1)
+        gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
+        gradient_penalty = ((gradients_norm - 1) ** 2).mean() * 10
+        
+        loss = fake_loss - exp_loss + gradient_penalty
 
         self.discriminator_optim.zero_grad()
         loss.backward()
-        clip_grad_norm_(self.discriminator.parameters(), CLIPPING_VALUE)
         self.discriminator_optim.step()
 
         return loss.item()
@@ -235,7 +256,7 @@ class Agent:
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
         pred = self.discriminator(pov, item, action)
-        reward = torch.clamp(pred.log(), min=-5) * BONUS_RATIO
+        reward = -pred * BONUS_RATIO
         return reward.item()
 
     def train(self):
