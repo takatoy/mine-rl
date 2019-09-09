@@ -160,11 +160,9 @@ class Agent:
 
         self.policy = Policy(item_dim, self.action_space.n).to(device)
         self.discriminator = Discriminator(item_dim, self.action_space.n).to(device)
-        # self.state_discriminator = StateDiscriminator(item_dim).to(device)
 
         self.policy_optim = torch.optim.Adam(self.policy.parameters(), lr=LEARNING_RATE)
         self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters(), lr=LEARNING_RATE)
-        # self.state_discriminator_optim = torch.optim.Adam(self.state_discriminator.parameters(), lr=LEARNING_RATE)
 
         self.mse_loss = nn.MSELoss(reduction='none')
         self.bce_loss = nn.BCELoss()
@@ -207,6 +205,12 @@ class Agent:
 
         n = len(expert_states)
 
+        expert_states = np.array(expert_states)
+        expert_actions = np.array(expert_actions)
+        idx = np.random.permutation(n)
+        expert_states = expert_states[idx]
+        expert_actions = expert_actions[idx]
+
         exp_povs = []
         exp_items = []
         povs = []
@@ -246,36 +250,6 @@ class Agent:
 
         return loss.item()
 
-    def train_state_discriminator(self, expert_states):
-        self.state_discriminator.train()
-
-        _, _, _, _, povs, items, _, _ = self.make_batches()
-        n = povs.size(0)
-
-        exp_povs = []
-        exp_items = []
-        for s in expert_states[:n]:
-            pov, item = self.preprocess(s)
-            exp_povs.append(pov)
-            exp_items.append(item)
-        exp_povs = torch.tensor(exp_povs, dtype=torch.float, device=device)
-        exp_items = torch.tensor(exp_items, dtype=torch.float, device=device)
-
-        labels = torch.full((povs.size(0), 1), 0, device=device)
-        exp_labels = torch.full((exp_povs.size(0), 1), 1, device=device)
-
-        probs = self.state_discriminator(exp_povs, exp_items)
-        loss = self.bce_loss(probs, exp_labels)
-        probs = self.state_discriminator(povs, items)
-        loss += self.bce_loss(probs, labels)
-
-        self.state_discriminator_optim.zero_grad()
-        loss.backward()
-        clip_grad_norm_(self.state_discriminator.parameters(), CLIPPING_VALUE)
-        self.state_discriminator_optim.step()
-
-        return loss.item()
-
     def bonus_reward(self, state, action, n_state):
         pov, item = self.preprocess(state)
         pov = torch.tensor([pov], device=device).float()
@@ -283,13 +257,6 @@ class Agent:
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
         pred = self.discriminator(pov, item, action)
         reward = torch.clamp(pred.log(), min=-5) * BONUS_RATIO
-
-        # n_pov, n_item = self.preprocess(n_state)
-        # n_pov = torch.tensor([n_pov], device=device).float()
-        # n_item = torch.tensor([n_item], device=device).float()
-        # pred += self.state_discriminator(n_pov, n_item)
-        # reward += torch.clamp(pred.log(), min=-5)
-
         return reward.item()
 
     def train(self):

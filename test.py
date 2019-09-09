@@ -19,6 +19,8 @@ from src.env_wrappers import CombineActionWrapper, SerialDiscreteCombineActionWr
 MINERL_GYM_ENV = os.getenv('MINERL_GYM_ENV', 'MineRLObtainDiamond-v0')
 MINERL_MAX_EVALUATION_EPISODES = int(os.getenv('MINERL_MAX_EVALUATION_EPISODES', 5))
 
+FRAME_SKIP = 4
+
 def main():
     """
     This function will be called for training phase.
@@ -26,6 +28,7 @@ def main():
     # Sample code for illustration, add your code below to run in test phase.
     # Load trained model from train/ directory
     env = gym.make(MINERL_GYM_ENV)
+    env = FrameSkip(env, FRAME_SKIP)
     env = ObsWrapper(env)
     env = MoveAxisWrapper(env, -1, 0)
     env = CombineActionWrapper(env)

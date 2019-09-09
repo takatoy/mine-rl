@@ -114,15 +114,12 @@ def main():
 
             if step % TRAIN_INTERVAL == 0:
                 discrim_loss = 0.0
-                # state_discrim_loss = 0.0
                 for i in range(TRAIN_DISCRIM_EPOCH):
                     s, a, _, _, _ = data_source.__next__()
                     s = data_state_wrapper(s)
                     a = data_action_wrapper(a)
                     discrim_loss += agent.train_discriminator(s, a)
-                    # state_discrim_loss += agent.train_state_discriminator(s)
                 writer.add_scalar('Loss/Discriminator', discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
-                # writer.add_scalar('Loss/StateDiscriminator', state_discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
 
                 policy_loss = agent.train()
                 writer.add_scalar('Loss/Policy', policy_loss, net_steps)

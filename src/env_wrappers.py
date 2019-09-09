@@ -223,7 +223,7 @@ def _data_action_wrapper(action):
                 candidate.append(mapping[k][3])
 
     if len(candidate) == 0:
-        candidate.append(1)  # forward instead of no-op
+        candidate.append(0)  # forward instead of no-op
 
     action = random.choice(candidate)
     return action
