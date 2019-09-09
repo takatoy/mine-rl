@@ -136,7 +136,7 @@ def main():
         n_episode += 1
 
         if n_episode % TRAIN_FROM_EXPERT_INTERVAL == 0:
-            train_from_expert(agent, data)
+            train_from_expert(agent, data_source)
 
         agent.save_model()
 
