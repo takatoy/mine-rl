@@ -208,6 +208,14 @@ class Agent:
             else:
                 povs.append(pov)
                 items.append(item)
+
+        if len(self.data) > n // 4:
+            # add some simulated states
+            samples = list(zip(*self.data))
+            for i in range(n // 4):
+                povs[i] = samples[0][i]
+                items[i] = samples[1][i]
+
         exp_povs = torch.tensor(exp_povs, dtype=torch.float, device=device)
         exp_items = torch.tensor(exp_items, dtype=torch.float, device=device)
         povs = torch.tensor(povs, dtype=torch.float, device=device)
@@ -228,8 +236,8 @@ class Agent:
 
         # gradient penalty
         alpha1 = torch.rand(n // 2, *self.observation_space['pov'].shape).to(device)
-        alpha2 = torch.rand(n // 2, self.item_dim)
-        alpha3 = torch.rand(n // 2, self.action_space.n)
+        alpha2 = torch.rand(n // 2, self.item_dim).to(device)
+        alpha3 = torch.rand(n // 2, self.action_space.n).to(device)
         pov_interpolates = (alpha1 * exp_povs + ((1 - alpha1) * povs)).requires_grad_()
         item_interpolates = (alpha2 * exp_items + ((1 - alpha2) * items)).requires_grad_()
         action_interpolates = (alpha3 * exp_actions + ((1 - alpha3) * actions.detach())).requires_grad_()

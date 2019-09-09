@@ -78,7 +78,7 @@ def main():
     data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
     # behavioral cloning
-    # train_from_expert(agent, data_source)
+    train_from_expert(agent, data_source)
 
     net_steps = 0
     n_episode = 0
@@ -112,7 +112,7 @@ def main():
             step += 1
             net_steps += 1
 
-            if step % TRAIN_INTERVAL == 0:
+            if step % TRAIN_INTERVAL == 0 or done:
                 discrim_loss = 0.0
                 for i in range(TRAIN_DISCRIM_EPOCH):
                     s, a, _, _, _ = data_source.__next__()
@@ -126,9 +126,6 @@ def main():
                 writer.add_scalar('Loss/Discriminator', discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
                 agent.save_model()
 
-            if net_steps >= MINERL_TRAINING_MAX_STEPS:
-                break
-        
         writer.add_scalar('Reward', netr, n_episode)
         writer.add_scalar('Bonus Reward', net_bonus_r, n_episode)
         n_episode += 1
@@ -137,9 +134,6 @@ def main():
             train_from_expert(agent, data_source)
 
         agent.save_model()
-
-        if net_steps >= MINERL_TRAINING_MAX_STEPS:
-            break
 
     agent.save_model()
 
