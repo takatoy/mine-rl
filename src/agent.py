@@ -16,7 +16,7 @@ C_1 = 1.0
 C_2 = 0.01
 EPS_CLIP = 0.2
 K_EPOCH = 3
-BONUS_RATIO = 0.5
+BONUS_RATIO = 0.0001
 CLIPPING_VALUE = 10
 LEARNING_RATE = 0.001
 ############################
@@ -123,27 +123,6 @@ class Discriminator(nn.Module):
         x = self.pov(p)
         y = self.item(i)
         x = torch.cat([x, y, a], -1)
-        x = F.leaky_relu(self.do1(self.fc1(x)))
-        x = F.leaky_relu(self.do2(self.fc2(x)))
-        x = torch.sigmoid(self.fc3(x))
-        return x
-
-
-class StateDiscriminator(nn.Module):
-    def __init__(self, n_item):
-        super().__init__()
-        self.pov = PovEncoder()
-        self.item = ItemEncoder(n_item)
-        self.fc1 = nn.Linear(640, 512)
-        self.do1 = nn.Dropout(p=0.5)
-        self.fc2 = nn.Linear(512, 256)
-        self.do2 = nn.Dropout(p=0.5)
-        self.fc3 = nn.Linear(256, 1)
-
-    def forward(self, p, i):
-        x = self.pov(p)
-        y = self.item(i)
-        x = torch.cat([x, y], -1)
         x = F.leaky_relu(self.do1(self.fc1(x)))
         x = F.leaky_relu(self.do2(self.fc2(x)))
         x = torch.sigmoid(self.fc3(x))

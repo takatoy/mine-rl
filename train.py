@@ -46,7 +46,7 @@ parser = Parser('performance/',
 TRAIN_INTERVAL = 128
 TRAIN_FROM_EXPERT_INTERVAL = 50
 TRAIN_FROM_EXPERT_EPOCH = 500
-TRAIN_DISCRIM_EPOCH = 1
+TRAIN_DISCRIM_EPOCH = 3
 FRAME_SKIP = 4
 ############################
 
@@ -119,10 +119,11 @@ def main():
                     s = data_state_wrapper(s)
                     a = data_action_wrapper(a)
                     discrim_loss += agent.train_discriminator(s, a)
-                writer.add_scalar('Loss/Discriminator', discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
 
                 policy_loss = agent.train()
+
                 writer.add_scalar('Loss/Policy', policy_loss, net_steps)
+                writer.add_scalar('Loss/Discriminator', discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
                 agent.save_model()
 
             if net_steps >= MINERL_TRAINING_MAX_STEPS:
