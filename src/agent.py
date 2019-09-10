@@ -264,8 +264,8 @@ class Agent:
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
-        pred = self.discriminator(pov, item, action)
-        reward = pred * BONUS_RATIO
+        pred = F.sigmoid(self.discriminator(pov, item, action))
+        reward = -torch.log(1 - pred + 1e-8)
         return reward.item()
 
     def train(self):
