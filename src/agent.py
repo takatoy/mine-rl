@@ -14,12 +14,12 @@ from gym.spaces.utils import flatdim, flatten, unflatten
 GAMMA = 0.99
 LAMBDA = 0.95
 C_1 = 1.0
-C_2 = 0.01
+C_2 = 0.05
 EPS_CLIP = 0.2
 K_EPOCH = 3
 BONUS_RATIO = 0.0001
 CLIPPING_VALUE = 10
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.0001
 ############################
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
