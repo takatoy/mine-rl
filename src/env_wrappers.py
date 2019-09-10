@@ -8,6 +8,23 @@ import numpy as np
 from gym.wrappers import Monitor
 from gym.wrappers.monitoring.stats_recorder import StatsRecorder
 
+mapping = {
+    'forward': 1,
+    'back': 2,
+    'left': 3,
+    'right': 4,
+    'jump': 5,
+    'sneak': [6, 7, 8, 9],
+    'sprint': [10, 11, 12, 13],
+    'camera': [14, 15, 16, 17],
+    'attack': 18,
+    'place': [19, 20, 21, 22, 23, 24],
+    'equip': [25, 26, 27, 28, 29, 30, 31],
+    'craft': [32, 33, 34, 35],
+    'nearbyCraft': [36, 37, 38, 39, 40, 41, 42],
+    'nearbySmelt': [43, 44]
+}
+
 
 class FrameSkip(gym.Wrapper):
     """Return every `skip`-th frame and repeat given action during skip.
@@ -20,9 +37,16 @@ class FrameSkip(gym.Wrapper):
         self._skip = skip
 
     def step(self, action):
+        just_once = False
+        if action in (mapping['place'] + mapping['equip'] + mapping['craft'] + \
+                      mapping['nearbyCraft'] + mapping['nearbySmelt']):
+            just_once = True
+
         total_reward = 0.0
         for _ in range(self._skip):
             obs, reward, done, info = self.env.step(action)
+            if just_once:
+                action = 0  # no-op
             total_reward += reward
             if done:
                 break
@@ -171,6 +195,14 @@ class SerialDiscreteCombineActionWrapper(gym.ActionWrapper):
                 op[key] = np.array([10, 0], dtype=np.float32)
                 self._actions.append(op)
                 op = copy.deepcopy(self.noop)
+            elif key == 'sneak_sprint':
+                for i in [1, 2]:
+                    for j in ['forward_back', 'left_right']:
+                        for k in [1, 2]:
+                            op = copy.deepcopy(self.noop)
+                            op[key] = i
+                            op[j] = k
+                            self._actions.append(op)
             else:
                 for a in range(1, self.wrapping_action_space.spaces[key].n):
                     op = copy.deepcopy(self.noop)
@@ -189,26 +221,25 @@ class SerialDiscreteCombineActionWrapper(gym.ActionWrapper):
 
 
 def _data_action_wrapper(action):
-    # discrete actions
-    mapping = {
-        'forward': 1,
-        'back': 2,
-        'left': 3,
-        'right': 4,
-        'jump': 5,
-        'sneak': 6,
-        'sprint': 7,
-        'camera': [8, 9, 10, 11],
-        'attack': 12,
-        'place': [13, 14, 15, 16, 17, 18],
-        'equip': [19, 20, 21, 22, 23, 24, 25],
-        'craft': [26, 27, 28, 29],
-        'nearbyCraft': [30, 31, 32, 33, 34, 35, 36],
-        'nearbySmelt': [37, 38]
-    }
     candidate = []
+    for k in ['sneak', 'sprint']:
+        if action[k] == 0:
+            continue
+        if action['forward'] == 1:
+            candidate.append(mapping[k][0])
+            action['forward'] = 0
+        if action['back'] == 1:
+            candidate.append(mapping[k][1])
+            action['back'] = 0
+        if action['left'] == 1:
+            candidate.append(mapping[k][2])
+            action['left'] = 0
+        if action['right'] == 1:
+            candidate.append(mapping[k][3])
+            action['right'] = 0
+
     for k, v in action.items():
-        if k in ['forward', 'back', 'left', 'right', 'jump', 'sneak', 'sprint', 'attack'] and v == 1:
+        if k in ['forward', 'back', 'left', 'right', 'jump', 'attack'] and v == 1:
             candidate.append(mapping[k])
         elif k in ['place', 'equip', 'craft', 'nearbyCraft', 'nearbySmelt'] and v != 0:
             candidate.append(mapping[k][v - 1])
@@ -223,7 +254,7 @@ def _data_action_wrapper(action):
                 candidate.append(mapping[k][3])
 
     if len(candidate) == 0:
-        candidate.append(0)  # forward instead of no-op
+        candidate.append(0)
 
     action = random.choice(candidate)
     return action
