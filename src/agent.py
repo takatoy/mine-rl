@@ -14,7 +14,7 @@ from gym.spaces.utils import flatdim, flatten, unflatten
 GAMMA = 0.99
 LAMBDA = 0.95
 C_1 = 1.0
-C_2 = 0.05
+C_2 = 0.01
 EPS_CLIP = 0.2
 K_EPOCH = 3
 BONUS_RATIO = 0.0001
@@ -289,7 +289,6 @@ class Agent:
                 adv.insert(0, [A])
             adv = torch.tensor(adv, dtype=torch.float, device=device)
             adv = (adv - adv.mean()) / (adv.std() + 1e-8)
-            value_target = s_val + adv
 
             prob = self.policy.act(pov, item)
             m = Categorical(prob)
@@ -301,7 +300,7 @@ class Agent:
             ppo_loss = -torch.min(surr1, surr2)
             total_ppo_loss += ppo_loss.mean()
 
-            value_loss = C_1 * self.mse_loss(s_val, value_target.detach())
+            value_loss = C_1 * self.mse_loss(s_val, td_target.detach())
             total_value_loss += value_loss.mean()
 
             entropy = m.entropy().unsqueeze(-1)
