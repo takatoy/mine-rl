@@ -46,7 +46,7 @@ parser = Parser('performance/',
 TRAIN_INTERVAL = 128
 TRAIN_FROM_EXPERT_INTERVAL = 50
 TRAIN_FROM_EXPERT_EPOCH = 500
-TRAIN_DISCRIM_EPOCH = 3
+TRAIN_DISCRIM_EPOCH = 1
 FRAME_SKIP = 4
 ############################
 
