@@ -14,12 +14,12 @@ from gym.spaces.utils import flatdim, flatten, unflatten
 GAMMA = 0.99
 LAMBDA = 0.95
 C_1 = 1.0
-C_2 = 0.01
+C_2 = 0.05
 EPS_CLIP = 0.2
 K_EPOCH = 3
-BONUS_RATIO = 0.01
+BONUS_RATIO = 0.0001
 CLIPPING_VALUE = 10
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.0001
 ############################
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -272,7 +272,9 @@ class Agent:
 
         pov, item, action, reward, n_pov, n_item, done_mask, olp = self.make_batches()
 
-        mean_loss = 0.0
+        total_ppo_loss = 0.0
+        total_value_loss = 0.0
+        total_entropy_loss = 0.0
         for _ in range(K_EPOCH):
             s_val = self.policy.val(pov, item)
             td_target = reward.unsqueeze(-1) + GAMMA * self.policy.val(n_pov, n_item) * done_mask
@@ -290,25 +292,31 @@ class Agent:
 
             prob = self.policy.act(pov, item)
             m = Categorical(prob)
-            lp = m.log_prob(action)
-            entropy = m.entropy().unsqueeze(-1)
-            ratio = torch.exp(lp - olp.detach()).unsqueeze(-1)
 
+            lp = m.log_prob(action)
+            ratio = torch.exp(lp - olp.detach()).unsqueeze(-1)
             surr1 = ratio * adv
             surr2 = torch.clamp(ratio, 1.0 - EPS_CLIP, 1.0 + EPS_CLIP) * adv
-            loss = -torch.min(surr1, surr2) \
-                + C_1 * self.mse_loss(s_val, value_target.detach()) \
-                - C_2 * entropy
+            ppo_loss = -torch.min(surr1, surr2)
+            total_ppo_loss += ppo_loss.mean()
+
+            value_loss = C_1 * self.mse_loss(s_val, value_target.detach())
+            total_value_loss += value_loss.mean()
+
+            entropy = m.entropy().unsqueeze(-1)
+            entropy_loss = -C_2 * entropy
+            total_entropy_loss += entropy_loss.mean()
+
+            loss = ppo_loss + value_loss + entropy_loss
 
             self.policy_optim.zero_grad()
             loss.mean().backward()
             clip_grad_norm_(self.policy.parameters(), CLIPPING_VALUE)
             self.policy_optim.step()
 
-            mean_loss += loss.mean().item()
         del self.data[:]
 
-        return mean_loss / K_EPOCH
+        return total_ppo_loss / K_EPOCH, total_value_loss / K_EPOCH, total_entropy_loss / K_EPOCH
 
     def make_batches(self):
         samples = list(zip(*self.data))  # transpose

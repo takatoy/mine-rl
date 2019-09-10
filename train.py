@@ -120,14 +120,16 @@ def main():
                     a = data_action_wrapper(a)
                     discrim_loss += agent.train_discriminator(s, a)
 
-                policy_loss = agent.train()
+                ppo_loss, value_loss, entropy_loss = agent.train()
 
-                writer.add_scalar('Loss/Policy', policy_loss, net_steps)
+                writer.add_scalar('Loss/PPO', ppo_loss, net_steps)
+                writer.add_scalar('Loss/Value', value_loss, net_steps)
+                writer.add_scalar('Loss/Entropy', entropy_loss, net_steps)
                 writer.add_scalar('Loss/Discriminator', discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
                 agent.save_model()
 
-        writer.add_scalar('Reward', netr, n_episode)
-        writer.add_scalar('Bonus Reward', net_bonus_r, n_episode)
+        writer.add_scalar('Reward/ExternalReward', netr, n_episode)
+        writer.add_scalar('Reward/TotalReward', net_bonus_r, n_episode)
         n_episode += 1
 
         if n_episode % TRAIN_FROM_EXPERT_INTERVAL == 0:
