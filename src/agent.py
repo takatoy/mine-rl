@@ -17,7 +17,7 @@ C_1 = 1.0
 C_2 = 0.05
 EPS_CLIP = 0.2
 K_EPOCH = 3
-BONUS_RATIO = 0.0001
+BONUS_RATIO = 0.001
 CLIPPING_VALUE = 10
 LEARNING_RATE = 0.0001
 ############################
@@ -157,6 +157,7 @@ class Agent:
         item = torch.tensor([item], device=device).float()
 
         act = self.policy.act(pov, item)
+        print(act)
 
         m = Categorical(act)
         action = torch.tensor(action, device=device) if action is not None else m.sample()
@@ -265,7 +266,7 @@ class Agent:
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
         pred = F.sigmoid(self.discriminator(pov, item, action))
-        reward = -torch.log(1 - pred + 1e-8)
+        reward = torch.clamp(torch.log(pred + 1e-8), min=-2.0) * BONUS_RATIO
         return reward.item()
 
     def train(self):
