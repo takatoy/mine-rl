@@ -157,7 +157,6 @@ class Agent:
         item = torch.tensor([item], device=device).float()
 
         act = self.policy.act(pov, item)
-        print(act)
 
         m = Categorical(act)
         action = torch.tensor(action, device=device) if action is not None else m.sample()
