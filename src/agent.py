@@ -19,7 +19,7 @@ EPS_CLIP = 0.2
 K_EPOCH = 3
 BONUS_RATIO = 0.001
 CLIPPING_VALUE = 10
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.001
 ############################
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
