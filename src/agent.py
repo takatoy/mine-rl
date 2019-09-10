@@ -248,12 +248,13 @@ class Agent:
                                   create_graph=True, retain_graph=True, only_inputs=True)[0]
         gradients = gradients.view(n // 2, -1)
         gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
-        gradient_penalty = ((gradients_norm - 1) ** 2).mean() * 10
-        
+        gradient_penalty = ((gradients_norm - 1.0) ** 2).mean() * 10
+
         loss = fake_loss - exp_loss + gradient_penalty
 
         self.discriminator_optim.zero_grad()
         loss.backward()
+        clip_grad_norm_(self.policy.parameters(), CLIPPING_VALUE)
         self.discriminator_optim.step()
 
         return loss.item()
@@ -264,7 +265,7 @@ class Agent:
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
         pred = self.discriminator(pov, item, action)
-        reward = -pred * BONUS_RATIO
+        reward = pred * BONUS_RATIO
         return reward.item()
 
     def train(self):
