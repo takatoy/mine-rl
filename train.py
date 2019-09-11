@@ -113,8 +113,8 @@ def main():
             net_steps += 1
 
             if step % TRAIN_INTERVAL == 0 or done:
-                discrim_loss = 0.0
-                total_value = total_ppo_loss = total_value_loss = total_entropy = total_discrim_loss = 0
+                total_discrim_loss = 0.0
+                total_value = total_ppo_loss = total_value_loss = total_entropy = 0
                 n_epoch = 0
                 while not agent.is_memory_empty():
                     s, a, _, _, _ = data_source.__next__()
@@ -133,7 +133,7 @@ def main():
                 writer.add_scalar('Train/PolicyLoss', ppo_loss / n_epoch, net_steps)
                 writer.add_scalar('Train/ValueLoss', value_loss / n_epoch, net_steps)
                 writer.add_scalar('Train/Entropy', entropy / n_epoch, net_steps)
-                writer.add_scalar('Train/DiscriminatorLoss', discrim_loss / n_epoch, net_steps)
+                writer.add_scalar('Train/DiscriminatorLoss', total_discrim_loss / n_epoch, net_steps)
                 agent.save_model()
 
         writer.add_scalar('Reward/ExternalReward', netr, n_episode)
