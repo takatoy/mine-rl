@@ -17,9 +17,10 @@ C_1 = 1.0
 C_2 = 0.01
 EPS_CLIP = 0.2
 K_EPOCH = 3
-BONUS_RATIO = 0.0001
+BONUS_RATIO = 0.00001
 CLIPPING_VALUE = 10
 LEARNING_RATE = 0.0001
+BATCH_SIZE = 256
 ############################
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -46,9 +47,9 @@ class PovEncoder(nn.Module):
 class ItemEncoder(nn.Module):
     def __init__(self, in_features):
         super().__init__()
-        self.fc1 = nn.Linear(in_features, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 128)
+        self.fc1 = nn.Linear(in_features, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 64)
     
     def forward(self, x):
         x = F.leaky_relu(self.fc1(x))
@@ -60,7 +61,7 @@ class ItemEncoder(nn.Module):
 class ValueDecoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(512 + 128, 512)
+        self.fc1 = nn.Linear(512 + 64, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, 1)
 
@@ -74,14 +75,16 @@ class ValueDecoder(nn.Module):
 class ActionDecoder(nn.Module):
     def __init__(self, out_features):
         super().__init__()
-        self.fc1 = nn.Linear(512 + 128, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, out_features)
+        self.fc1 = nn.Linear(512 + 64, 512)
+        self.fc2 = nn.Linear(512, 512)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, out_features)
 
     def forward(self, x):
         x = F.leaky_relu(self.fc1(x))
         x = F.leaky_relu(self.fc2(x))
-        x = F.softmax(self.fc3(x), dim=-1)
+        x = F.leaky_relu(self.fc3(x))
+        x = F.softmax(self.fc4(x), dim=-1)
         return x
 
 
@@ -114,7 +117,7 @@ class Discriminator(nn.Module):
         super().__init__()
         self.pov = PovEncoder()
         self.item = ItemEncoder(n_item)
-        self.fc1 = nn.Linear(640 + n_action, 512)
+        self.fc1 = nn.Linear(512 + 64 + n_action, 512)
         self.do1 = nn.Dropout(p=0.5)
         self.fc2 = nn.Linear(512, 256)
         self.do2 = nn.Dropout(p=0.5)
@@ -149,7 +152,7 @@ class Agent:
 
         self.last_lp = None
 
-        self.data = []
+        self.memory = []
 
     def act(self, obs, action=None):
         pov, item = self.preprocess(obs)
@@ -178,7 +181,10 @@ class Agent:
         action = flatten(self.action_space, action)
         action = np.argmax(action)  # to one-hot
         datum = [pov, item, action, reward, n_pov, n_item, done, self.last_lp]
-        self.data.append(datum)
+        self.memory.append(datum)
+
+    def is_memory_empty(self):
+        return len(self.memory) == 0
 
     def train_discriminator(self, expert_states, expert_actions):
         self.discriminator.train()
@@ -209,13 +215,6 @@ class Agent:
                 povs.append(pov)
                 items.append(item)
 
-        if len(self.data) > n // 4:
-            # add some simulated states
-            samples = list(zip(*self.data))
-            for i in range(n // 4):
-                povs[i] = samples[0][i]
-                items[i] = samples[1][i]
-
         exp_povs = torch.tensor(exp_povs, dtype=torch.float, device=device)
         exp_items = torch.tensor(exp_items, dtype=torch.float, device=device)
         povs = torch.tensor(povs, dtype=torch.float, device=device)
@@ -238,9 +237,9 @@ class Agent:
         alpha1 = torch.rand(n // 2, *self.observation_space['pov'].shape).to(device)
         alpha2 = torch.rand(n // 2, self.item_dim).to(device)
         alpha3 = torch.rand(n // 2, self.action_space.n).to(device)
-        pov_interpolates = (alpha1 * exp_povs + ((1 - alpha1) * povs)).requires_grad_()
-        item_interpolates = (alpha2 * exp_items + ((1 - alpha2) * items)).requires_grad_()
-        action_interpolates = (alpha3 * exp_actions + ((1 - alpha3) * actions.detach())).requires_grad_()
+        pov_interpolates = (alpha1 * exp_povs + ((1 - alpha1) * povs)).detach().requires_grad_()
+        item_interpolates = (alpha2 * exp_items + ((1 - alpha2) * items)).detach().requires_grad_()
+        action_interpolates = (alpha3 * exp_actions + ((1 - alpha3) * actions)).detach().requires_grad_()
         pred = self.discriminator(pov_interpolates, item_interpolates, action_interpolates)
         gradients = autograd.grad(outputs=pred,
                                   inputs=[pov_interpolates, item_interpolates, action_interpolates],
@@ -264,20 +263,21 @@ class Agent:
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
         action = torch.tensor([flatten(self.action_space, action)], device=device).float()
-        pred = F.sigmoid(self.discriminator(pov, item, action))
+        pred = self.discriminator(pov, item, action)
         reward = pred * BONUS_RATIO
         return reward.item()
 
-    def train(self):
-        self.policy.train()
+    def train_policy(self):
+        pov, item, action, reward, n_pov, n_item, done_mask, olp = \
+            self.make_batches(self.memory[:BATCH_SIZE])
 
-        pov, item, action, reward, n_pov, n_item, done_mask, olp = self.make_batches()
-
+        total_value = 0.0
         total_ppo_loss = 0.0
         total_value_loss = 0.0
-        total_entropy_loss = 0.0
+        total_entropy = 0.0
         for _ in range(K_EPOCH):
             s_val = self.policy.val(pov, item)
+            total_value += s_val.mean().item()
             td_target = reward.unsqueeze(-1) + GAMMA * self.policy.val(n_pov, n_item) * done_mask
             delta = td_target - s_val
             delta = delta.detach().cpu().numpy()
@@ -298,14 +298,14 @@ class Agent:
             surr1 = ratio * adv
             surr2 = torch.clamp(ratio, 1.0 - EPS_CLIP, 1.0 + EPS_CLIP) * adv
             ppo_loss = -torch.min(surr1, surr2)
-            total_ppo_loss += ppo_loss.mean()
+            total_ppo_loss += ppo_loss.mean().item()
 
             value_loss = C_1 * self.mse_loss(s_val, td_target.detach())
-            total_value_loss += value_loss.mean()
+            total_value_loss += value_loss.mean().item()
 
             entropy = m.entropy().unsqueeze(-1)
             entropy_loss = -C_2 * entropy
-            total_entropy_loss += entropy_loss.mean()
+            total_entropy += entropy.mean().item()
 
             loss = ppo_loss + value_loss + entropy_loss
 
@@ -313,13 +313,12 @@ class Agent:
             loss.mean().backward()
             clip_grad_norm_(self.policy.parameters(), CLIPPING_VALUE)
             self.policy_optim.step()
+        del self.memory[:BATCH_SIZE]
 
-        del self.data[:]
+        return total_value / K_EPOCH, total_ppo_loss / K_EPOCH, total_value_loss / K_EPOCH, total_entropy / K_EPOCH
 
-        return total_ppo_loss / K_EPOCH, total_value_loss / K_EPOCH, total_entropy_loss / K_EPOCH
-
-    def make_batches(self):
-        samples = list(zip(*self.data))  # transpose
+    def make_batches(self, data):
+        samples = list(zip(*data))  # transpose
 
         pov = torch.tensor(samples[0], dtype=torch.float, device=device)
         item = torch.tensor(samples[1], dtype=torch.float, device=device)

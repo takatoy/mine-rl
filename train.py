@@ -43,11 +43,9 @@ parser = Parser('performance/',
                 initial_poll_timeout=600)
 
 ########## params ##########
-TRAIN_INTERVAL = 128
-TRAIN_FROM_EXPERT_INTERVAL = 50
-TRAIN_FROM_EXPERT_EPOCH = 500
-TRAIN_DISCRIM_EPOCH = 1
-FRAME_SKIP = 4
+TRAIN_INTERVAL = 8192
+TRAIN_FROM_EXPERT_EPOCH = 10000
+FRAME_SKIP = 0
 ############################
 
 def train_from_expert(agent, data_source):
@@ -58,16 +56,18 @@ def train_from_expert(agent, data_source):
         a = data_action_wrapper(a)
         for state, action, reward, n_state, done in zip(s, a, r, ns, d):
             agent.act(state, action)
+            # reward += agent.bonus_reward(state, action, n_state)
             agent.add_data(state, action, reward, n_state, done)
         agent.train_discriminator(s, a)
-        agent.train()
+        agent.train_policy()
         agent.save_model()
 
 def main():
     writer = SummaryWriter()
 
     env = gym.make('MineRLObtainDiamondDense-v0')
-    env = FrameSkip(env, FRAME_SKIP)
+    if FRAME_SKIP > 0:
+        env = FrameSkip(env, FRAME_SKIP)
     env = ObsWrapper(env)
     env = MoveAxisWrapper(env, -1, 0)
     env = CombineActionWrapper(env)
@@ -114,26 +114,31 @@ def main():
 
             if step % TRAIN_INTERVAL == 0 or done:
                 discrim_loss = 0.0
-                for i in range(TRAIN_DISCRIM_EPOCH):
+                total_value = total_ppo_loss = total_value_loss = total_entropy = total_discrim_loss = 0
+                n_epoch = 0
+                while not agent.is_memory_empty():
                     s, a, _, _, _ = data_source.__next__()
                     s = data_state_wrapper(s)
                     a = data_action_wrapper(a)
-                    discrim_loss += agent.train_discriminator(s, a)
+                    total_discrim_loss += agent.train_discriminator(s, a)
+                    value, ppo_loss, value_loss, entropy = agent.train_policy()
 
-                ppo_loss, value_loss, entropy_loss = agent.train()
+                    total_value += value
+                    total_ppo_loss += ppo_loss
+                    total_value_loss += value_loss
+                    total_entropy += entropy
+                    n_epoch += 1
 
-                writer.add_scalar('Loss/PPO', ppo_loss, net_steps)
-                writer.add_scalar('Loss/Value', value_loss, net_steps)
-                writer.add_scalar('Loss/Entropy', entropy_loss, net_steps)
-                writer.add_scalar('Loss/Discriminator', discrim_loss / TRAIN_DISCRIM_EPOCH, net_steps)
+                writer.add_scalar('Train/Value', value / n_epoch, net_steps)
+                writer.add_scalar('Train/PolicyLoss', ppo_loss / n_epoch, net_steps)
+                writer.add_scalar('Train/ValueLoss', value_loss / n_epoch, net_steps)
+                writer.add_scalar('Train/Entropy', entropy / n_epoch, net_steps)
+                writer.add_scalar('Train/DiscriminatorLoss', discrim_loss / n_epoch, net_steps)
                 agent.save_model()
 
         writer.add_scalar('Reward/ExternalReward', netr, n_episode)
         writer.add_scalar('Reward/TotalReward', net_bonus_r, n_episode)
         n_episode += 1
-
-        if n_episode % TRAIN_FROM_EXPERT_INTERVAL == 0:
-            train_from_expert(agent, data_source)
 
         agent.save_model()
 
