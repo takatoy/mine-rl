@@ -2,28 +2,12 @@ from collections import OrderedDict
 import copy
 import time
 import random
+import pickle
 
 import gym
 import numpy as np
 from gym.wrappers import Monitor
 from gym.wrappers.monitoring.stats_recorder import StatsRecorder
-
-mapping = {
-    'forward': 1,
-    'back': 2,
-    'left': 3,
-    'right': 4,
-    'jump': 5,
-    'sneak': [6, 7, 8, 9],
-    'sprint': [10, 11, 12, 13],
-    'camera': [14, 15, 16, 17],
-    'attack': 18,
-    'place': [19, 20, 21, 22, 23, 24],
-    'equip': [25, 26, 27, 28, 29, 30, 31],
-    'craft': [32, 33, 34, 35],
-    'nearbyCraft': [36, 37, 38, 39, 40, 41, 42],
-    'nearbySmelt': [43, 44]
-}
 
 
 class FrameSkip(gym.Wrapper):
@@ -39,7 +23,7 @@ class FrameSkip(gym.Wrapper):
     def step(self, action):
         just_once = False
         if action in (mapping['place'] + mapping['equip'] + mapping['craft'] + \
-                      mapping['nearbyCraft'] + mapping['nearbySmelt']):
+                      mapping['nearbyCraft'] + mapping['nearbySmelt'] + mapping['camera']):
             just_once = True
 
         total_reward = 0.0
@@ -53,12 +37,64 @@ class FrameSkip(gym.Wrapper):
         return obs, total_reward, done, info
 
 
+full_obs = {
+    "equipped_items": {
+        "mainhand": {
+            "damage": 0,
+            "maxDamage": 0,
+            "type": 0
+        }
+    },
+    "inventory": {
+        "coal": 0,
+        "cobblestone": 0,
+        "crafting_table": 0,
+        "dirt": 0,
+        "furnace": 0,
+        "iron_axe": 0,
+        "iron_ingot": 0,
+        "iron_ore": 0,
+        "iron_pickaxe": 0,
+        "log": 0,
+        "planks": 0,
+        "stick": 0,
+        "stone": 0,
+        "stone_axe": 0,
+        "stone_pickaxe": 0,
+        "torch": 0,
+        "wooden_axe": 0,
+        "wooden_pickaxe": 0
+    },
+    "pov": None
+}
+
+
+def get_full_obs(obs):
+    s = copy.deepcopy(full_obs)
+    if 'equipped_items' in obs.keys() and \
+            'mainhand' in obs['equipped_items'].keys():
+        for k in obs['equipped_items']['mainhand'].keys():
+            s['equipped_items']['mainhand'][k] = obs['equipped_items']['mainhand'][k]
+    if 'inventory' in obs.keys():
+        for k in obs['inventory'].keys():
+            s['inventory'][k] = obs['inventory'][k]
+    s['pov'] = obs['pov']
+    return s
+
+
+def get_full_obs_space():
+    with open('src/obs_space.pickle', 'rb') as f:
+        obs_space = pickle.load(f)
+    return obs_space
+
+
 class ObsWrapper(gym.ObservationWrapper):
-    """Obtain 'pov' value (current game display) of the original observation."""
     def __init__(self, env):
         super().__init__(env)
+        self.observation_space = get_full_obs_space()
 
     def observation(self, observation):
+        observation = get_full_obs(observation)
         if type(observation['equipped_items']['mainhand']['type']) is str:
             observation['equipped_items']['mainhand']['type'] = 8
         return observation
@@ -124,36 +160,41 @@ class CombineActionWrapper(gym.ActionWrapper):
             new_key, new_actions = combine_exclusive_actions(keys)
             self._maps[new_key] = new_actions
 
-        self.noop = OrderedDict([
-            ('forward_back', 0),
-            ('left_right', 0),
-            ('jump', 0),
-            ('sneak_sprint', 0),
-            ('camera', np.zeros((2, ), dtype=np.float32)),
-            ('attack_place_equip_craft_nearbyCraft_nearbySmelt', 0),
-        ])
+        # discretize camera
+        self._maps['camera'] = [
+            {'camera': np.array([0, 0])},
+            {'camera': np.array([10., 0])},
+            {'camera': np.array([-10., 0])},
+            {'camera': np.array([0, 10.])},
+            {'camera': np.array([0, -10.])}
+        ]
 
-        self.action_space = gym.spaces.Dict({
-            'forward_back':
-                gym.spaces.Discrete(len(self._maps['forward_back'])),
-            'left_right':
-                gym.spaces.Discrete(len(self._maps['left_right'])),
-            'jump':
-                self.wrapping_action_space.spaces['jump'],
-            'sneak_sprint':
-                gym.spaces.Discrete(len(self._maps['sneak_sprint'])),
-            'camera':
-                self.wrapping_action_space.spaces['camera'],
-            'attack_place_equip_craft_nearbyCraft_nearbySmelt':
-                gym.spaces.Discrete(len(self._maps['attack_place_equip_craft_nearbyCraft_nearbySmelt']))
-        })
+        self.noop = [0, 0, 0, 0, 0, 0]
+        self.keys = [
+            'forward_back',
+            'left_right',
+            'jump',
+            'sneak_sprint',
+            'camera',
+            'attack_place_equip_craft_nearbyCraft_nearbySmelt'
+        ]
+
+        self.action_space = gym.spaces.MultiDiscrete([
+            len(self._maps['forward_back']),
+            len(self._maps['left_right']),
+            self.wrapping_action_space.spaces['jump'].n,
+            len(self._maps['sneak_sprint']),
+            len(self._maps['camera']),
+            len(self._maps['attack_place_equip_craft_nearbyCraft_nearbySmelt'])
+        ])
 
     def action(self, action):
         if not self.action_space.contains(action):
             raise ValueError('action {} is invalid for {}'.format(action, self.action_space))
 
         original_space_action = OrderedDict()
-        for k, v in action.items():
+        for i, v in enumerate(action):
+            k = self.keys[i]
             if k in self._maps:
                 a = self._maps[k][v]
                 original_space_action.update(a)
@@ -183,16 +224,16 @@ class SerialDiscreteCombineActionWrapper(gym.ActionWrapper):
         for key in self.noop:
             if key == 'camera':
                 op = copy.deepcopy(self.noop)
-                op[key] = np.array([0, -10], dtype=np.float32)
+                op[key] = np.array([10., 0], dtype=np.float32)
                 self._actions.append(op)
                 op = copy.deepcopy(self.noop)
-                op[key] = np.array([0, 10], dtype=np.float32)
+                op[key] = np.array([-10., 0], dtype=np.float32)
                 self._actions.append(op)
                 op = copy.deepcopy(self.noop)
-                op[key] = np.array([-10, 0], dtype=np.float32)
+                op[key] = np.array([0, 10.], dtype=np.float32)
                 self._actions.append(op)
                 op = copy.deepcopy(self.noop)
-                op[key] = np.array([10, 0], dtype=np.float32)
+                op[key] = np.array([0, -10.], dtype=np.float32)
                 self._actions.append(op)
                 op = copy.deepcopy(self.noop)
             elif key == 'sneak_sprint':
@@ -220,44 +261,42 @@ class SerialDiscreteCombineActionWrapper(gym.ActionWrapper):
         return original_space_action
 
 
-def _data_action_wrapper(action):
-    candidate = []
-    for k in ['sneak', 'sprint']:
-        if action[k] == 0:
-            continue
-        if action['forward'] == 1:
-            candidate.append(mapping[k][0])
-            action['forward'] = 0
-        if action['back'] == 1:
-            candidate.append(mapping[k][1])
-            action['back'] = 0
-        if action['left'] == 1:
-            candidate.append(mapping[k][2])
-            action['left'] = 0
-        if action['right'] == 1:
-            candidate.append(mapping[k][3])
-            action['right'] = 0
+mapping = {
+    'forward': [0, 1],
+    'back': [0, 2],
+    'left': [1, 1],
+    'right': [1, 2],
+    'jump': [2, 1],
+    'sneak': [3, 1],
+    'sprint': [3, 2],
+    'camera': [[4, 1], [4, 2], [4, 3], [4, 4]],
+    'attack': [5, 1],
+    'place': [[5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7]],
+    'equip': [[5, 8], [5, 9], [5, 10], [5, 11], [5, 12], [5, 13], [5, 14]],
+    'craft': [[5, 15], [5, 16], [5, 17], [5, 18]],
+    'nearbyCraft': [[5, 19], [5, 20], [5, 21], [5, 22], [5, 23], [5, 24], [5, 25]],
+    'nearbySmelt': [[5, 26], [5, 27]]
+}
 
+
+def _data_action_wrapper(action):
+    wrapped = [0, 0, 0, 0, 0, 0]
     for k, v in action.items():
         if k in ['forward', 'back', 'left', 'right', 'jump', 'attack'] and v == 1:
-            candidate.append(mapping[k])
+            wrapped[mapping[k][0]] = mapping[k][1]
         elif k in ['place', 'equip', 'craft', 'nearbyCraft', 'nearbySmelt'] and v != 0:
-            candidate.append(mapping[k][v - 1])
+            wrapped[mapping[k][v - 1][0]] = mapping[k][v - 1][1]
         elif k == 'camera':
-            if v[1] < -3.0:
-                candidate.append(mapping[k][0])
-            if v[1] > 3.0:
-                candidate.append(mapping[k][1])
-            if v[0] < -3.0:
-                candidate.append(mapping[k][2])
-            if v[0] > 3.0:
-                candidate.append(mapping[k][3])
+            if v[0] > 5.0:
+                wrapped[mapping[k][0][0]] = mapping[k][0][1]
+            if v[0] < -5.0:
+                wrapped[mapping[k][1][0]] = mapping[k][1][1]
+            if v[1] > 5.0:
+                wrapped[mapping[k][2][0]] = mapping[k][2][1]
+            if v[1] < -5.0:
+                wrapped[mapping[k][3][0]] = mapping[k][3][1]
+    return wrapped
 
-    if len(candidate) == 0:
-        candidate.append(0)
-
-    action = random.choice(candidate)
-    return action
 
 def data_action_wrapper(data_actions):
     actions = []
@@ -268,19 +307,20 @@ def data_action_wrapper(data_actions):
         actions.append(_data_action_wrapper(a))
     return actions
 
+
 def data_state_wrapper(data_states):
     states = []
     for i in range(len(data_states['pov'])):
-        s = {
-            'equipped_items': {
-                'mainhand': {}
-            },
-            'inventory': {}
-        }
-        for k, v in data_states['equipped_items']['mainhand'].items():
-            s['equipped_items']['mainhand'][k] = v[i]
-        for k, v in data_states['inventory'].items():
-            s['inventory'][k] = v[i]
-        s['pov'] = np.moveaxis(data_states['pov'][i], -1, 0)
+        s = copy.deepcopy(full_obs)
+        for k in s['equipped_items']['mainhand'].keys():
+            if 'equipped_items' in data_states.keys() and \
+                    'mainhand' in data_states['equipped_items'].keys() and \
+                    k in data_states['equipped_items']['mainhand'].keys():
+                s['equipped_items']['mainhand'][k] = data_states['equipped_items']['mainhand'][k][i]
+        for k in s['inventory'].keys():
+            if 'inventory' in data_states.keys():
+                s['inventory'][k] = data_states['inventory'][k][i]
+        if 'pov' in s.keys():
+            s['pov'] = np.moveaxis(data_states['pov'][i], -1, 0)
         states.append(s)
     return states

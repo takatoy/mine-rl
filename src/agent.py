@@ -8,7 +8,7 @@ import torch.autograd as autograd
 from torch.distributions import Categorical
 from torch.nn.utils import clip_grad_norm_
 
-from gym.spaces.utils import flatdim, flatten, unflatten
+from gym.spaces.utils import flatdim, flatten
 
 ########## params ##########
 GAMMA = 0.99
@@ -19,8 +19,8 @@ EPS_CLIP = 0.2
 K_EPOCH = 3
 BONUS_RATIO = 1e-7
 CLIPPING_VALUE = 10
-LEARNING_RATE = 0.001
-BATCH_SIZE = 256
+LEARNING_RATE = 0.0002
+BATCH_SIZE = 128
 ############################
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -73,28 +73,31 @@ class ValueDecoder(nn.Module):
 
 
 class ActionDecoder(nn.Module):
-    def __init__(self, out_features):
+    def __init__(self, nvec):
         super().__init__()
         self.fc1 = nn.Linear(512 + 64, 512)
-        self.fc2 = nn.Linear(512, 512)
-        self.fc3 = nn.Linear(512, 256)
-        self.fc4 = nn.Linear(256, out_features)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3s = []
+        for n in nvec:
+            # Multi-discrete
+            self.fc3s.append(nn.Linear(256, n))
 
     def forward(self, x):
         x = F.leaky_relu(self.fc1(x))
         x = F.leaky_relu(self.fc2(x))
-        x = F.leaky_relu(self.fc3(x))
-        x = F.softmax(self.fc4(x), dim=-1)
-        return x
+        xs = []
+        for fc3 in self.fc3s:
+            xs.append(F.softmax(fc3(x), dim=-1))
+        return xs
 
 
 class Policy(nn.Module):
-    def __init__(self, n_item, n_action):
+    def __init__(self, n_item, action_nvec):
         super().__init__()
         self.pov = PovEncoder()
         self.item = ItemEncoder(n_item)
         self.value = ValueDecoder()
-        self.action = ActionDecoder(n_action)
+        self.action = ActionDecoder(action_nvec)
 
     def embed(self, p, i):
         hp = self.pov(p)
@@ -108,12 +111,13 @@ class Policy(nn.Module):
 
     def act(self, p, i):
         h = self.embed(p, i)
-        x = self.action(h)
-        return x
+        xs = self.action(h)
+        return xs
 
 
 class Discriminator(nn.Module):
-    def __init__(self, n_item, n_action):
+    def __init__(self, n_item, action_nvec):
+        n_action = np.sum(action_nvec)
         super().__init__()
         self.pov = PovEncoder()
         self.item = ItemEncoder(n_item)
@@ -141,8 +145,8 @@ class Agent:
         self.item_dim = flatdim(self.observation_space['equipped_items']) + \
             flatdim(self.observation_space['inventory'])
 
-        self.policy = Policy(self.item_dim, self.action_space.n).to(device)
-        self.discriminator = Discriminator(self.item_dim, self.action_space.n).to(device)
+        self.policy = Policy(self.item_dim, self.action_space.nvec).to(device)
+        self.discriminator = Discriminator(self.item_dim, self.action_space.nvec).to(device)
 
         self.policy_optim = torch.optim.Adam(self.policy.parameters(), lr=LEARNING_RATE)
         self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters(), lr=LEARNING_RATE)
@@ -161,11 +165,14 @@ class Agent:
 
         act = self.policy.act(pov, item)
 
-        m = Categorical(act)
-        action = torch.tensor(action, device=device) if action is not None else m.sample()
-        self.last_lp = m.log_prob(action).item()
+        ms = [Categorical(a) for a in act]
+        if action is not None:
+            action = torch.tensor(action, device=device).unsqueeze(-1)
+        else:
+            action = [m.sample() for m in ms]
+        self.last_lp = np.sum([m.log_prob(a).item() for m, a in zip(ms, action)]).item()
 
-        return action.item()
+        return [a.item() for a in action]
 
     def preprocess(self, obs):
         pov = obs['pov'].astype(np.float) / 255.0
@@ -175,11 +182,14 @@ class Agent:
         ])
         return pov, item
 
+    def action_to_onehot(self, action):
+        action = np.concatenate([np.eye(self.action_space.nvec[i])[a] for i, a in enumerate(action)])
+        return action
+
     def add_data(self, obs, action, reward, n_obs, done):
         pov, item = self.preprocess(obs)
         n_pov, n_item = self.preprocess(n_obs)
-        action = flatten(self.action_space, action)
-        action = np.argmax(action)  # to one-hot
+        action = self.action_to_onehot(action)
         datum = [pov, item, action, reward, n_pov, n_item, done, self.last_lp]
         self.memory.append(datum)
 
@@ -191,6 +201,7 @@ class Agent:
 
         n = len(expert_states)
         if n % 2 == 1:
+            # To even number
             expert_states = expert_states[:-1]
             expert_actions = expert_actions[:-1]
             n -= 1
@@ -222,7 +233,7 @@ class Agent:
 
         exp_actions = []
         for i in range(n // 2):
-            exp_actions.append(flatten(self.action_space, expert_actions[i]))
+            exp_actions.append(self.action_to_onehot(expert_actions[i]))
         exp_actions = torch.tensor(exp_actions, dtype=torch.float, device=device)
         actions = self.policy.act(povs, items)
 
@@ -262,7 +273,7 @@ class Agent:
         pov, item = self.preprocess(state)
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
-        action = torch.tensor([flatten(self.action_space, action)], device=device).float()
+        action = torch.tensor([self.action_to_onehot(action)], device=device).float()
         pred = self.discriminator(pov, item, action)
         reward = pred * BONUS_RATIO
         return reward.item()
@@ -290,10 +301,10 @@ class Agent:
             adv = torch.tensor(adv, dtype=torch.float, device=device)
             adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
-            prob = self.policy.act(pov, item)
-            m = Categorical(prob)
+            probs = self.policy.act(pov, item)
+            ms = [Categorical(prob) for prob in probs]
 
-            lp = m.log_prob(action)
+            lp = torch.sum([m.log_prob(a) for m, a in zip(ms, a)], dim=-1)
             ratio = torch.exp(lp - olp.detach()).unsqueeze(-1)
             surr1 = ratio * adv
             surr2 = torch.clamp(ratio, 1.0 - EPS_CLIP, 1.0 + EPS_CLIP) * adv

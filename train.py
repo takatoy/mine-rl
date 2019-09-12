@@ -4,6 +4,7 @@ import select
 import time
 import logging
 import os
+import pickle
 
 import aicrowd_helper
 import gym
@@ -56,7 +57,6 @@ def train_from_expert(agent, data_source):
         a = data_action_wrapper(a)
         for state, action, reward, n_state, done in zip(s, a, r, ns, d):
             agent.act(state, action)
-            # reward += agent.bonus_reward(state, action, n_state)
             agent.add_data(state, action, reward, n_state, done)
         agent.train_discriminator(s, a)
         agent.train_policy()
@@ -65,20 +65,21 @@ def train_from_expert(agent, data_source):
 def main():
     writer = SummaryWriter()
 
-    env = gym.make('MineRLObtainDiamondDense-v0')
+    env = gym.make('MineRLTreechop-v0')
     if FRAME_SKIP > 0:
         env = FrameSkip(env, FRAME_SKIP)
     env = ObsWrapper(env)
     env = MoveAxisWrapper(env, -1, 0)
     env = CombineActionWrapper(env)
-    env = SerialDiscreteCombineActionWrapper(env)
 
     agent = Agent(env.observation_space, env.action_space)
-    data = minerl.data.make(MINERL_GYM_ENV, data_dir=MINERL_DATA_ROOT)
+    # data = minerl.data.make('MineRLObtainDiamond-v0', data_dir=MINERL_DATA_ROOT)
+    # data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
+    data = minerl.data.make('MineRLTreechop-v0', data_dir=MINERL_DATA_ROOT)
     data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
     # behavioral cloning
-    train_from_expert(agent, data_source)
+    # train_from_expert(agent, data_source)
 
     net_steps = 0
     n_episode = 0
@@ -117,7 +118,7 @@ def main():
                 total_value = total_ppo_loss = total_value_loss = total_entropy = 0
                 n_epoch = 0
                 while not agent.is_memory_empty():
-                    s, a, _, _, _ = data_source.__next__()
+                    s, a, _, _, _ = data_od_source.__next__()
                     s = data_state_wrapper(s)
                     a = data_action_wrapper(a)
                     total_discrim_loss += agent.train_discriminator(s, a)
