@@ -240,7 +240,7 @@ class Agent:
         ms = [Categorical(a) for a in act]
         act = torch.cat([
                 torch.eye(self.action_space.nvec[i].item())[m.sample()] for i, m in enumerate(ms)
-            ], dim=1)
+            ], dim=1).to(device)
 
         # train discriminator with WGAN-gp
         exp_pred = self.discriminator(exp_povs, exp_items, exp_actions)

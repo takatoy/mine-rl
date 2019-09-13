@@ -44,7 +44,7 @@ parser = Parser('performance/',
                 initial_poll_timeout=600)
 
 ########## params ##########
-TRAIN_INTERVAL = 8192
+TRAIN_INTERVAL = 128
 TRAIN_FROM_EXPERT_EPOCH = 10000
 FRAME_SKIP = 0
 ############################
@@ -79,7 +79,7 @@ def main():
     data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
     # behavioral cloning
-    train_from_expert(agent, data_source)
+    # train_from_expert(agent, data_source)
 
     net_steps = 0
     n_episode = 0
@@ -118,7 +118,7 @@ def main():
                 total_value = total_ppo_loss = total_value_loss = total_entropy = 0
                 n_epoch = 0
                 while not agent.is_memory_empty():
-                    s, a, _, _, _ = data_od_source.__next__()
+                    s, a, _, _, _ = data_source.__next__()
                     s = data_state_wrapper(s)
                     a = data_action_wrapper(a)
                     total_discrim_loss += agent.train_discriminator(s, a)
