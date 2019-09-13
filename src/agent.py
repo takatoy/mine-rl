@@ -238,17 +238,15 @@ class Agent:
         exp_actions = torch.tensor(exp_actions, dtype=torch.float, device=device)
         act = self.policy.act(povs, items)
         ms = [Categorical(a) for a in act]
-        act = torch.cat([m.sample().unsqueeze(0) for m in ms]).transpose(0, 1)
-        actions = []
-        for a in act:
-            actions.append(self.action_to_onehot(a))
-        actions = torch.tensor(actions, dtype=torch.float, device=device)
+        act = torch.cat([
+                torch.eye(self.action_space.nvec[i].item())[m.sample()] for i, m in enumerate(ms)
+            ], dim=1)
 
         # train discriminator with WGAN-gp
         exp_pred = self.discriminator(exp_povs, exp_items, exp_actions)
         exp_loss = exp_pred.mean()
 
-        fake_pred = self.discriminator(povs, items, actions.detach())
+        fake_pred = self.discriminator(povs, items, act.detach())
         fake_loss = fake_pred.mean()
 
         # gradient penalty
@@ -258,7 +256,7 @@ class Agent:
         alpha3 = torch.rand(n // 2, n_action).to(device)
         pov_interpolates = (alpha1 * exp_povs + ((1 - alpha1) * povs)).detach().requires_grad_()
         item_interpolates = (alpha2 * exp_items + ((1 - alpha2) * items)).detach().requires_grad_()
-        action_interpolates = (alpha3 * exp_actions + ((1 - alpha3) * actions)).detach().requires_grad_()
+        action_interpolates = (alpha3 * exp_actions + ((1 - alpha3) * act)).detach().requires_grad_()
         pred = self.discriminator(pov_interpolates, item_interpolates, action_interpolates)
         gradients = autograd.grad(outputs=pred,
                                   inputs=[pov_interpolates, item_interpolates, action_interpolates],
