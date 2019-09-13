@@ -77,7 +77,7 @@ class ActionDecoder(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(512 + 64, 512)
         self.fc2 = nn.Linear(512, 256)
-        self.fc3s = []
+        self.fc3s = nn.ModuleList()
         for n in nvec:
             # Multi-discrete
             self.fc3s.append(nn.Linear(256, n))
@@ -189,7 +189,6 @@ class Agent:
     def add_data(self, obs, action, reward, n_obs, done):
         pov, item = self.preprocess(obs)
         n_pov, n_item = self.preprocess(n_obs)
-        action = self.action_to_onehot(action)
         datum = [pov, item, action, reward, n_pov, n_item, done, self.last_lp]
         self.memory.append(datum)
 
@@ -235,7 +234,13 @@ class Agent:
         for i in range(n // 2):
             exp_actions.append(self.action_to_onehot(expert_actions[i]))
         exp_actions = torch.tensor(exp_actions, dtype=torch.float, device=device)
-        actions = self.policy.act(povs, items)
+        act = self.policy.act(povs, items)
+        ms = [Categorical(a) for a in act]
+        act = torch.cat([m.sample().unsqueeze(0) for m in ms]).transpose(0, 1)
+        actions = []
+        for a in act:
+            actions.append(self.action_to_onehot(a))
+        actions = torch.tensor(actions, dtype=torch.float, device=device)
 
         # train discriminator with WGAN-gp
         exp_pred = self.discriminator(exp_povs, exp_items, exp_actions)
@@ -245,9 +250,10 @@ class Agent:
         fake_loss = fake_pred.mean()
 
         # gradient penalty
+        n_action = np.sum(self.action_space.nvec)
         alpha1 = torch.rand(n // 2, *self.observation_space['pov'].shape).to(device)
         alpha2 = torch.rand(n // 2, self.item_dim).to(device)
-        alpha3 = torch.rand(n // 2, self.action_space.n).to(device)
+        alpha3 = torch.rand(n // 2, n_action).to(device)
         pov_interpolates = (alpha1 * exp_povs + ((1 - alpha1) * povs)).detach().requires_grad_()
         item_interpolates = (alpha2 * exp_items + ((1 - alpha2) * items)).detach().requires_grad_()
         action_interpolates = (alpha3 * exp_actions + ((1 - alpha3) * actions)).detach().requires_grad_()
@@ -303,8 +309,8 @@ class Agent:
 
             probs = self.policy.act(pov, item)
             ms = [Categorical(prob) for prob in probs]
-
-            lp = torch.sum([m.log_prob(a) for m, a in zip(ms, a)], dim=-1)
+            lp = torch.cat([m.log_prob(a).unsqueeze(0) for m, a in zip(ms, action)]).transpose(0, 1)
+            lp = torch.sum(lp, 1)
             ratio = torch.exp(lp - olp.detach()).unsqueeze(-1)
             surr1 = ratio * adv
             surr2 = torch.clamp(ratio, 1.0 - EPS_CLIP, 1.0 + EPS_CLIP) * adv
@@ -314,7 +320,8 @@ class Agent:
             value_loss = C_1 * self.mse_loss(s_val, td_target.detach())
             total_value_loss += value_loss.mean().item()
 
-            entropy = m.entropy().unsqueeze(-1)
+            entropy = torch.cat([m.entropy().unsqueeze(0) for m in ms]).transpose(0, 1)
+            entropy = torch.sum(entropy, 1).unsqueeze(-1)
             entropy_loss = -C_2 * entropy
             total_entropy += entropy.mean().item()
 
@@ -333,7 +340,7 @@ class Agent:
 
         pov = torch.tensor(samples[0], dtype=torch.float, device=device)
         item = torch.tensor(samples[1], dtype=torch.float, device=device)
-        action = torch.tensor(samples[2], dtype=torch.int, device=device)
+        action = torch.tensor(samples[2], dtype=torch.int, device=device).transpose(0, 1)
         reward = torch.tensor(samples[3], dtype=torch.float, device=device)
         n_pov = torch.tensor(samples[4], dtype=torch.float, device=device)
         n_item = torch.tensor(samples[5], dtype=torch.float, device=device)
