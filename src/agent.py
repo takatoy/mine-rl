@@ -204,6 +204,8 @@ class Agent:
             expert_states = expert_states[:-1]
             expert_actions = expert_actions[:-1]
             n -= 1
+        if n == 0:
+            return 0.0
 
         # shuffle data
         expert_states = np.array(expert_states)
