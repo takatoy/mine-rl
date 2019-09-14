@@ -18,8 +18,8 @@ C_2 = 0.01
 EPS_CLIP = 0.2
 K_EPOCH = 3
 BONUS_RATIO = 1e-7
-CLIPPING_VALUE = 10
-LEARNING_RATE = 0.0002
+CLIPPING_VALUE = 1.0
+LEARNING_RATE = 0.0001
 BATCH_SIZE = 128
 ############################
 
@@ -40,7 +40,7 @@ class PovEncoder(nn.Module):
         x = F.leaky_relu(self.conv2(x))
         x = F.leaky_relu(self.conv3(x))
         x = x.view(x.size(0), -1)
-        x = F.leaky_relu(self.fc(x))
+        x = self.fc(x)
         return x
 
 
@@ -54,73 +54,55 @@ class ItemEncoder(nn.Module):
     def forward(self, x):
         x = F.leaky_relu(self.fc1(x))
         x = F.leaky_relu(self.fc2(x))
-        x = F.leaky_relu(self.fc3(x))
-        return x
-
-
-class ValueDecoder(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc1 = nn.Linear(512 + 64, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, 1)
-
-    def forward(self, x):
-        x = F.leaky_relu(self.fc1(x))
-        x = F.leaky_relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
 
-class ActionDecoder(nn.Module):
-    def __init__(self, nvec):
-        super().__init__()
-        self.fc1 = nn.Linear(512 + 64, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3s = nn.ModuleList()
-        for n in nvec:
-            # Multi-discrete
-            self.fc3s.append(nn.Linear(256, n))
-
-    def forward(self, x):
-        x = F.leaky_relu(self.fc1(x))
-        x = F.leaky_relu(self.fc2(x))
-        xs = []
-        for fc3 in self.fc3s:
-            xs.append(F.softmax(fc3(x), dim=-1))
-        return xs
-
-
-class Policy(nn.Module):
-    def __init__(self, n_item, action_nvec):
+class Actor(nn.Module):
+    def __init__(self, nvec, item_dim):
         super().__init__()
         self.pov = PovEncoder()
-        self.item = ItemEncoder(n_item)
-        self.value = ValueDecoder()
-        self.action = ActionDecoder(action_nvec)
+        self.item = ItemEncoder(item_dim)
+        self.fc1 = nn.Linear(512 + 64, 256)
+        self.fc2s = nn.ModuleList()
+        for n in nvec:
+            # Multi-discrete
+            self.fc2s.append(nn.Linear(256, n))
 
-    def embed(self, p, i):
-        hp = self.pov(p)
-        hi = self.item(i)
-        return torch.cat((hp, hi), -1)
-
-    def val(self, p, i):
-        h = self.embed(p, i)
-        x = self.value(h)
-        return x
-
-    def act(self, p, i):
-        h = self.embed(p, i)
-        xs = self.action(h)
+    def forward(self, p, i):
+        hp = F.leaky_relu(self.pov(p))
+        hi = F.leaky_relu(self.item(i))
+        x = torch.cat((hp, hi), -1)
+        x = F.leaky_relu(self.fc1(x))
+        xs = []
+        for fc2 in self.fc2s:
+            xs.append(F.softmax(fc2(x), dim=-1))
         return xs
+
+
+class Critic(nn.Module):
+    def __init__(self, item_dim):
+        super().__init__()
+        self.pov = PovEncoder()
+        self.item = ItemEncoder(item_dim)
+        self.fc1 = nn.Linear(512 + 64, 256)
+        self.fc2 = nn.Linear(256, 1)
+
+    def forward(self, p, i):
+        hp = F.leaky_relu(self.pov(p))
+        hi = F.leaky_relu(self.item(i))
+        x = torch.cat((hp, hi), -1)
+        x = F.leaky_relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
 
 
 class Discriminator(nn.Module):
-    def __init__(self, n_item, action_nvec):
-        n_action = np.sum(action_nvec)
+    def __init__(self, nvec, item_dim):
+        n_action = np.sum(nvec)
         super().__init__()
         self.pov = PovEncoder()
-        self.item = ItemEncoder(n_item)
+        self.item = ItemEncoder(item_dim)
         self.fc1 = nn.Linear(512 + 64 + n_action, 512)
         self.do1 = nn.Dropout(p=0.5)
         self.fc2 = nn.Linear(512, 256)
@@ -145,10 +127,12 @@ class Agent:
         self.item_dim = flatdim(self.observation_space['equipped_items']) + \
             flatdim(self.observation_space['inventory'])
 
-        self.policy = Policy(self.item_dim, self.action_space.nvec).to(device)
-        self.discriminator = Discriminator(self.item_dim, self.action_space.nvec).to(device)
+        self.actor = Actor(self.action_space.nvec, self.item_dim).to(device)
+        self.critic = Critic(self.item_dim).to(device)
+        self.discriminator = Discriminator(self.action_space.nvec, self.item_dim).to(device)
 
-        self.policy_optim = torch.optim.Adam(self.policy.parameters(), lr=LEARNING_RATE)
+        self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=LEARNING_RATE)
+        self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=LEARNING_RATE)
         self.discriminator_optim = torch.optim.Adam(self.discriminator.parameters(), lr=LEARNING_RATE)
 
         self.mse_loss = nn.MSELoss(reduction='none')
@@ -163,7 +147,7 @@ class Agent:
         pov = torch.tensor([pov], device=device).float()
         item = torch.tensor([item], device=device).float()
 
-        act = self.policy.act(pov, item)
+        act = self.actor(pov, item)
 
         ms = [Categorical(a) for a in act]
         if action is not None:
@@ -236,7 +220,7 @@ class Agent:
         for i in range(n // 2):
             exp_actions.append(self.action_to_onehot(expert_actions[i]))
         exp_actions = torch.tensor(exp_actions, dtype=torch.float, device=device)
-        act = self.policy.act(povs, items)
+        act = self.actor(povs, items)
         ms = [Categorical(a) for a in act]
         act = torch.cat([
                 torch.eye(self.action_space.nvec[i].item())[m.sample()] for i, m in enumerate(ms)
@@ -270,7 +254,7 @@ class Agent:
 
         self.discriminator_optim.zero_grad()
         loss.backward()
-        clip_grad_norm_(self.policy.parameters(), CLIPPING_VALUE)
+        clip_grad_norm_(self.discriminator.parameters(), CLIPPING_VALUE)
         self.discriminator_optim.step()
 
         return loss.item()
@@ -293,11 +277,18 @@ class Agent:
         total_value_loss = 0.0
         total_entropy = 0.0
         for _ in range(K_EPOCH):
-            s_val = self.policy.val(pov, item)
+            s_val = self.critic(pov, item)
             total_value += s_val.mean().item()
-            td_target = reward.unsqueeze(-1) + GAMMA * self.policy.val(n_pov, n_item) * done_mask
+            td_target = reward + GAMMA * self.critic(n_pov, n_item) * done_mask
             delta = td_target - s_val
             delta = delta.detach().cpu().numpy()
+            value_loss = C_1 * self.mse_loss(s_val, td_target.detach())
+            total_value_loss += value_loss.mean().item()
+
+            self.critic_optim.zero_grad()
+            value_loss.mean().backward()
+            clip_grad_norm_(self.critic.parameters(), CLIPPING_VALUE)
+            self.critic_optim.step()
 
             adv = []
             A = 0.0
@@ -307,30 +298,27 @@ class Agent:
             adv = torch.tensor(adv, dtype=torch.float, device=device)
             adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
-            probs = self.policy.act(pov, item)
+            probs = self.actor(pov, item)
             ms = [Categorical(prob) for prob in probs]
             lp = torch.cat([m.log_prob(a).unsqueeze(0) for m, a in zip(ms, action)]).transpose(0, 1)
-            lp = torch.sum(lp, 1)
-            ratio = torch.exp(lp - olp.detach()).unsqueeze(-1)
+            lp = torch.sum(lp, 1, keepdim=True)
+            ratio = torch.exp(lp - olp.detach())
             surr1 = ratio * adv
             surr2 = torch.clamp(ratio, 1.0 - EPS_CLIP, 1.0 + EPS_CLIP) * adv
             ppo_loss = -torch.min(surr1, surr2)
             total_ppo_loss += ppo_loss.mean().item()
 
-            value_loss = C_1 * self.mse_loss(s_val, td_target.detach())
-            total_value_loss += value_loss.mean().item()
-
             entropy = torch.cat([m.entropy().unsqueeze(0) for m in ms]).transpose(0, 1)
-            entropy = torch.sum(entropy, 1).unsqueeze(-1)
+            entropy = torch.sum(entropy, 1, keepdim=True)
             entropy_loss = -C_2 * entropy
             total_entropy += entropy.mean().item()
 
-            loss = ppo_loss + value_loss + entropy_loss
+            loss = ppo_loss + entropy_loss
 
-            self.policy_optim.zero_grad()
+            self.actor_optim.zero_grad()
             loss.mean().backward()
-            clip_grad_norm_(self.policy.parameters(), CLIPPING_VALUE)
-            self.policy_optim.step()
+            clip_grad_norm_(self.actor.parameters(), CLIPPING_VALUE)
+            self.actor_optim.step()
         del self.memory[:BATCH_SIZE]
 
         return total_value / K_EPOCH, total_ppo_loss / K_EPOCH, total_value_loss / K_EPOCH, total_entropy / K_EPOCH
@@ -341,7 +329,7 @@ class Agent:
         pov = torch.tensor(samples[0], dtype=torch.float, device=device)
         item = torch.tensor(samples[1], dtype=torch.float, device=device)
         action = torch.tensor(samples[2], dtype=torch.int, device=device).transpose(0, 1)
-        reward = torch.tensor(samples[3], dtype=torch.float, device=device)
+        reward = torch.tensor(samples[3], dtype=torch.float, device=device).unsqueeze(-1)
         n_pov = torch.tensor(samples[4], dtype=torch.float, device=device)
         n_item = torch.tensor(samples[5], dtype=torch.float, device=device)
         
@@ -349,21 +337,25 @@ class Agent:
         done_mask = torch.from_numpy(done_mask).float().to(device)
         done_mask = done_mask.unsqueeze(-1)
 
-        lp = torch.tensor(samples[7], dtype=torch.float, device=device)
+        lp = torch.tensor(samples[7], dtype=torch.float, device=device).unsqueeze(-1)
 
         return pov, item, action, reward, n_pov, n_item, done_mask, lp
 
     def save_model(self, path='train/checkpoint.pth'):
         torch.save({
-            'policy_state_dict': self.policy.state_dict(),
-            'policy_optim_state_dict': self.policy_optim.state_dict(),
+            'actor_state_dict': self.actor.state_dict(),
+            'actor_optim_state_dict': self.actor_optim.state_dict(),
+            'critic_state_dict': self.critic.state_dict(),
+            'critic_optim_state_dict': self.critic_optim.state_dict(),
             'discriminator_state_dict': self.discriminator.state_dict(),
             'discriminator_optim_state_dict': self.discriminator_optim.state_dict()
         }, path)
 
     def load_model(self, path='train/checkpoint.pth'):
         checkpoint = torch.load(path, map_location=device)
-        self.policy.load_state_dict(checkpoint['policy_state_dict'])
-        self.policy_optim.load_state_dict(checkpoint['policy_optim_state_dict'])
+        self.actor.load_state_dict(checkpoint['actor_state_dict'])
+        self.actor_optim.load_state_dict(checkpoint['actor_optim_state_dict'])
+        self.critic.load_state_dict(checkpoint['critic_state_dict'])
+        self.critic_optim.load_state_dict(checkpoint['critic_optim_state_dict'])
         self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
         self.discriminator_optim.load_state_dict(checkpoint['discriminator_optim_state_dict'])
