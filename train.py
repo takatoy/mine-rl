@@ -47,6 +47,7 @@ parser = Parser('performance/',
 TRAIN_INTERVAL = 8192
 TRAIN_FROM_EXPERT_EPOCH = 10000
 FRAME_SKIP = 0
+DATA_BATCH_SIZE = 512
 ############################
 
 def train_from_expert(agent, data_source):
@@ -76,7 +77,7 @@ def main():
     # data = minerl.data.make('MineRLObtainDiamond-v0', data_dir=MINERL_DATA_ROOT)
     # data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
     data = minerl.data.make('MineRLTreechop-v0', data_dir=MINERL_DATA_ROOT)
-    data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
+    data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=DATA_BATCH_SIZE)
 
     # behavioral cloning
     train_from_expert(agent, data_source)

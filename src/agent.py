@@ -20,7 +20,7 @@ K_EPOCH = 3
 BONUS_RATIO = 1e-7
 CLIPPING_VALUE = 1.0
 LEARNING_RATE = 0.0001
-BATCH_SIZE = 128
+BATCH_SIZE = 512
 ############################
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -130,6 +130,10 @@ class Agent:
         self.actor = Actor(self.action_space.nvec, self.item_dim).to(device)
         self.critic = Critic(self.item_dim).to(device)
         self.discriminator = Discriminator(self.action_space.nvec, self.item_dim).to(device)
+
+        def printgradnorm(self, grad_input, grad_output):
+            print('grad_input norm:', grad_input[0].norm())
+        self.actor.fc1.register_backward_hook(printgradnorm)
 
         self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=LEARNING_RATE)
         self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=LEARNING_RATE)
@@ -319,6 +323,9 @@ class Agent:
             loss.mean().backward()
             clip_grad_norm_(self.actor.parameters(), CLIPPING_VALUE)
             self.actor_optim.step()
+
+        print(self.actor.fc1.weight)
+
         del self.memory[:BATCH_SIZE]
 
         return total_value / K_EPOCH, total_ppo_loss / K_EPOCH, total_value_loss / K_EPOCH, total_entropy / K_EPOCH
