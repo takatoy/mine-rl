@@ -47,7 +47,7 @@ parser = Parser('performance/',
 TRAIN_INTERVAL = 8192
 TRAIN_FROM_EXPERT_EPOCH = 10000
 FRAME_SKIP = 0
-DATA_BATCH_SIZE = 512
+DATA_BATCH_SIZE = 256
 ############################
 
 def train_from_expert(agent, data_source):

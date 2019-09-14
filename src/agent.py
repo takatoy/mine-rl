@@ -20,7 +20,7 @@ K_EPOCH = 3
 BONUS_RATIO = 1e-7
 CLIPPING_VALUE = 1.0
 LEARNING_RATE = 0.0001
-BATCH_SIZE = 512
+BATCH_SIZE = 256
 ############################
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -61,22 +61,21 @@ class ItemEncoder(nn.Module):
 class Actor(nn.Module):
     def __init__(self, nvec, item_dim):
         super().__init__()
+        self.nvec = nvec
+        n_action = np.sum(nvec)
         self.pov = PovEncoder()
         self.item = ItemEncoder(item_dim)
         self.fc1 = nn.Linear(512 + 64, 256)
-        self.fc2s = nn.ModuleList()
-        for n in nvec:
-            # Multi-discrete
-            self.fc2s.append(nn.Linear(256, n))
+        self.fc2 = nn.Linear(256, n_action)
 
     def forward(self, p, i):
         hp = F.leaky_relu(self.pov(p))
         hi = F.leaky_relu(self.item(i))
         x = torch.cat((hp, hi), -1)
         x = F.leaky_relu(self.fc1(x))
-        xs = []
-        for fc2 in self.fc2s:
-            xs.append(F.softmax(fc2(x), dim=-1))
+        x = self.fc2(x)
+        xs = torch.split(x, self.nvec.tolist(), dim=-1)
+        xs = [F.softmax(x, dim=-1) for x in xs]
         return xs
 
 
@@ -99,8 +98,8 @@ class Critic(nn.Module):
 
 class Discriminator(nn.Module):
     def __init__(self, nvec, item_dim):
-        n_action = np.sum(nvec)
         super().__init__()
+        n_action = np.sum(nvec)
         self.pov = PovEncoder()
         self.item = ItemEncoder(item_dim)
         self.fc1 = nn.Linear(512 + 64 + n_action, 512)
