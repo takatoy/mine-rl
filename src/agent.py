@@ -131,9 +131,9 @@ class Agent:
         self.critic = Critic(self.item_dim).to(device)
         self.discriminator = Discriminator(self.action_space.nvec, self.item_dim).to(device)
 
-        def printgradnorm(self, grad_input, grad_output):
-            print('grad_input norm:', grad_input[0].norm())
-        self.actor.fc1.register_backward_hook(printgradnorm)
+        # def printgradnorm(self, grad_input, grad_output):
+        #     print('grad_input norm:', grad_input[0].norm())
+        # self.actor.fc1.register_backward_hook(printgradnorm)
 
         self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=LEARNING_RATE)
         self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=LEARNING_RATE)
@@ -323,8 +323,6 @@ class Agent:
             loss.mean().backward()
             clip_grad_norm_(self.actor.parameters(), CLIPPING_VALUE)
             self.actor_optim.step()
-
-        print(self.actor.fc1.weight)
 
         del self.memory[:BATCH_SIZE]
 
