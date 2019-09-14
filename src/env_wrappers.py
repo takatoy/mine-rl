@@ -17,20 +17,19 @@ class FrameSkip(gym.Wrapper):
     """
     def __init__(self, env, skip=4):
         super().__init__(env)
-
         self._skip = skip
 
     def step(self, action):
-        just_once = False
-        if action in (mapping['place'] + mapping['equip'] + mapping['craft'] + \
-                      mapping['nearbyCraft'] + mapping['nearbySmelt'] + mapping['camera']):
-            just_once = True
+        # action that need to be taken just once
+        tmp_action = copy.deepcopy(action)
+        for k in ['place', 'equip', 'craft', 'nearbyCraft', 'nearbySmelt']:
+            tmp_action[k] = 0
+        tmp_action['camera'] = np.array([0, 0])
 
         total_reward = 0.0
-        for _ in range(self._skip):
-            obs, reward, done, info = self.env.step(action)
-            if just_once:
-                action = 0  # no-op
+        for i in range(self._skip):
+            a = action if i == 0 else tmp_action
+            obs, reward, done, info = self.env.step(a)
             total_reward += reward
             if done:
                 break
@@ -287,13 +286,13 @@ def _data_action_wrapper(action):
         elif k in ['place', 'equip', 'craft', 'nearbyCraft', 'nearbySmelt'] and v != 0:
             wrapped[mapping[k][v - 1][0]] = mapping[k][v - 1][1]
         elif k == 'camera':
-            if v[0] > 5.0:
+            if v[0] > 10.0:
                 wrapped[mapping[k][0][0]] = mapping[k][0][1]
-            if v[0] < -5.0:
+            if v[0] < -10.0:
                 wrapped[mapping[k][1][0]] = mapping[k][1][1]
-            if v[1] > 5.0:
+            if v[1] > 10.0:
                 wrapped[mapping[k][2][0]] = mapping[k][2][1]
-            if v[1] < -5.0:
+            if v[1] < -10.0:
                 wrapped[mapping[k][3][0]] = mapping[k][3][1]
     return wrapped
 
