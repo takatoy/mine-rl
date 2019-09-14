@@ -46,7 +46,7 @@ parser = Parser('performance/',
 ########## params ##########
 TRAIN_INTERVAL = 8192
 TRAIN_FROM_EXPERT_EPOCH = 10000
-FRAME_SKIP = 0
+FRAME_SKIP = 4
 DATA_BATCH_SIZE = 256
 ############################
 
