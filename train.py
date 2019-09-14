@@ -44,7 +44,7 @@ parser = Parser('performance/',
                 initial_poll_timeout=600)
 
 ########## params ##########
-TRAIN_INTERVAL = 128
+TRAIN_INTERVAL = 8192
 TRAIN_FROM_EXPERT_EPOCH = 10000
 FRAME_SKIP = 0
 ############################
