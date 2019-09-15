@@ -15,9 +15,10 @@ class FrameSkip(gym.Wrapper):
 
     Note that this wrapper does not "maximize" over the skipped frames.
     """
-    def __init__(self, env, skip=4):
+    def __init__(self, env, skip=4, enable_rendering=False):
         super().__init__(env)
         self._skip = skip
+        self.enable_rendering = enable_rendering
 
     def step(self, action):
         # action that need to be taken just once
@@ -31,6 +32,8 @@ class FrameSkip(gym.Wrapper):
             a = action if i == 0 else tmp_action
             obs, reward, done, info = self.env.step(a)
             total_reward += reward
+            if self.enable_rendering:
+                self.env.render()
             if done:
                 break
         return obs, total_reward, done, info

@@ -29,7 +29,7 @@ def main():
     # Load trained model from train/ directory
     env = gym.make(MINERL_GYM_ENV)
     if FRAME_SKIP > 0:
-        env = FrameSkip(env)
+        env = FrameSkip(env, enable_rendering=True)
     env = ObsWrapper(env)
     env = MoveAxisWrapper(env, -1, 0)
     env = CombineActionWrapper(env)

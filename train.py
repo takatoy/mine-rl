@@ -44,8 +44,8 @@ parser = Parser('performance/',
                 initial_poll_timeout=600)
 
 ########## params ##########
-TRAIN_INTERVAL = 8192
-TRAIN_FROM_EXPERT_EPOCH = 10000
+TRAIN_INTERVAL = 0  # 0 for one episode
+TRAIN_FROM_EXPERT_EPOCH = 1000
 FRAME_SKIP = 4
 DATA_BATCH_SIZE = 256
 ############################
@@ -74,10 +74,11 @@ def main():
     env = CombineActionWrapper(env)
 
     agent = Agent(env.observation_space, env.action_space)
-    # data = minerl.data.make('MineRLObtainDiamond-v0', data_dir=MINERL_DATA_ROOT)
-    # data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
     data = minerl.data.make('MineRLTreechop-v0', data_dir=MINERL_DATA_ROOT)
     data_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=DATA_BATCH_SIZE)
+
+    # data_2 = minerl.data.make('MineRLObtainDiamond-v0', data_dir=MINERL_DATA_ROOT)
+    # data_2_source = data.sarsd_iter(num_epochs=-1, max_sequence_len=128)
 
     # behavioral cloning
     train_from_expert(agent, data_source)
@@ -114,7 +115,7 @@ def main():
             step += 1
             net_steps += 1
 
-            if step % TRAIN_INTERVAL == 0 or done:
+            if (TRAIN_INTERVAL != 0 and step % TRAIN_INTERVAL == 0) or done:
                 total_discrim_loss = 0.0
                 total_value = total_ppo_loss = total_value_loss = total_entropy = 0
                 n_epoch = 0
